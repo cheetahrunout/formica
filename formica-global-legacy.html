@@ -1,0 +1,1038 @@
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* ============================================================
+   FORMICA — Lasius niger colony simulator
+   Palette: soil umber ground, amber pheromone (the signature),
+   teal home-marking, bone-white ants, chalk brood.
+   ============================================================ */
+:root{
+  --loam:#14100C;
+  --soil:#221A13;
+  --chamber:#33271B;
+  --bone:#DCD3C2;
+  --chalk:#F0E9DC;
+  --amber:#E9A93C;
+  --teal:#4E8F86;
+  --rust:#A8543A;
+  --dim:#7A6B58;
+  --line:#2E251B;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--loam);color:var(--bone);
+  font-family:var(--mono);font-size:13px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:920px;margin:0 auto;padding:14px}
+
+header{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  padding-bottom:10px;border-bottom:1px solid var(--line);margin-bottom:12px}
+h1{margin:0;font-size:15px;font-weight:600;letter-spacing:.22em;text-transform:uppercase}
+header .sub{color:var(--dim);font-size:11px;letter-spacing:.08em}
+
+/* --- the canvas is the hero --- */
+.stage{position:relative;border:1px solid var(--line);background:#0D0A07;
+  border-radius:2px;overflow:hidden;line-height:0}
+canvas{width:100%;height:auto;display:block;touch-action:none}
+
+/* --- vitals strip --- */
+.vitals{display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);margin-top:12px}
+.v{background:var(--loam);padding:7px 8px}
+.v b{display:block;font-size:17px;font-weight:600;letter-spacing:.01em;color:var(--chalk)}
+.v span{display:block;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-top:2px}
+.v.acc b{color:var(--amber)}
+.v.cold b{color:var(--teal)}
+
+/* --- controls --- */
+.panel{margin-top:12px;border:1px solid var(--line);padding:11px}
+.row{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:9px}
+.row:last-child{margin-bottom:0}
+.lab{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);
+  width:100%;margin-bottom:1px}
+button{font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+  background:transparent;color:var(--bone);border:1px solid var(--line);
+  padding:6px 11px;cursor:pointer;border-radius:2px;transition:border-color .12s,color .12s}
+button:hover{border-color:var(--dim)}
+button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+button[aria-pressed="true"]{border-color:var(--amber);color:var(--amber)}
+input[type=range]{accent-color:var(--amber);flex:1;min-width:110px;height:20px}
+.val{color:var(--chalk);min-width:52px;text-align:right;font-size:11px}
+.qhead{margin:14px 0 6px;font-size:9px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--amber)}
+footer{margin-top:12px;color:var(--dim);font-size:10px;line-height:1.65;
+  border-top:1px solid var(--line);padding-top:9px}
+footer b{color:var(--bone);font-weight:600}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>Formica</h1>
+  <span class="sub">Lasius niger &middot; LEGACY: global-signal build &middot; v0.1</span>
+</header>
+
+<div class="stage">
+  <canvas id="cv" width="800" height="560"></canvas>
+</div>
+
+<div class="vitals">
+  <div class="v"><b id="s-day">0</b><span>Day</span></div>
+  <div class="v"><b id="s-work">0</b><span>Workers</span></div>
+  <div class="v"><b id="s-egg">0</b><span>Eggs</span></div>
+  <div class="v"><b id="s-lar">0</b><span>Larvae</span></div>
+  <div class="v"><b id="s-pup">0</b><span>Pupae</span></div>
+  <div class="v acc"><b id="s-sug">0</b><span>Sugar</span></div>
+  <div class="v acc"><b id="s-pro">0</b><span>Protein</span></div>
+  <div class="v cold"><b id="s-out">0</b><span>Foraging</span></div>
+  <div class="v"><b id="s-aph">0</b><span>Aphid colonies</span></div>
+  <div class="v"><b id="s-prey">0</b><span>Prey out there</span></div>
+</div>
+
+<p class="qhead">The queen</p>
+<div class="vitals">
+  <div class="v"><b id="q-phase">&mdash;</b><span>Phase</span></div>
+  <div class="v"><b id="q-mass">100%</b><span>Body mass</span></div>
+  <div class="v"><b id="q-fat">100%</b><span>Fat body</span></div>
+  <div class="v"><b id="q-crop">0</b><span>Thoracic crop</span></div>
+  <div class="v acc"><b id="q-rate">0</b><span>Eggs / day</span></div>
+  <div class="v"><b id="q-ret">0</b><span>Retinue</span></div>
+  <div class="v acc"><b id="q-qp">0</b><span>3-MeC31</span></div>
+  <div class="v cold"><b id="q-sperm">0</b><span>Sperm left</span></div>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <span class="lab">Run</span>
+    <button id="b-play" aria-pressed="true">Pause</button>
+    <button class="spd" data-s="1" aria-pressed="true">1&times;</button>
+    <button class="spd" data-s="4" aria-pressed="false">4&times;</button>
+    <button class="spd" data-s="16" aria-pressed="false">16&times;</button>
+    <button id="b-reset">Reset</button>
+  </div>
+  <div class="row">
+    <span class="lab">Show</span>
+    <button class="lyr" data-l="trail" aria-pressed="true">Trail</button>
+    <button class="lyr" data-l="home" aria-pressed="true">Home marking</button>
+    <button class="lyr" data-l="temp" aria-pressed="false">Temperature</button>
+  </div>
+  <div class="row">
+    <span class="lab">Ambient temperature</span>
+    <input type="range" id="r-temp" min="4" max="30" step="0.5" value="22">
+    <span class="val" id="v-temp">22.0&deg;C</span>
+  </div>
+  <div class="row">
+    <button id="b-season">Enter diapause</button>
+  </div>
+</div>
+
+<footer>
+  <b>Superseded — kept for reference only.</b> This build regulates nutrition through
+  colony-level variables that every ant reads directly: a central oracle. It is
+  retained because it is the last version that worked that way, and because its
+  numbers are the baseline the current build was measured against. Use formica.html.<br><br>
+  <b>One program per caste.</b> Every worker runs the same <code>WORKER_PROGRAM</code>;
+  the queen runs <code>QUEEN_PROGRAM</code>. Castes, trails, traffic, brood placement and
+  colony size are emergent, not scripted. Aphid colonies establish, peak and senesce on
+  their own; prey turns up at random. Nothing here needs tending. Rules are annotated in
+  source with the finding they came from.
+</footer>
+</div>
+
+<script>
+"use strict";
+/* ============================================================================
+   ARCHITECTURE
+
+   world     static terrain + scalar fields (temperature)
+   fields    trail pheromone, home-range marking  (Float32Array grids)
+   ants      structure-of-arrays, fixed capacity, one behaviour function
+   brood     structure-of-arrays, degree-day development model
+   colony    shared sugar/protein stores (stands in for trophallaxis)
+
+   TWO CLOCKS, deliberately decoupled:
+     - motion runs on real seconds so foraging is watchable
+     - development runs on sim-days so a colony matures in minutes
+   DAY_SECONDS sets the ratio. This is a presentation compromise, not biology.
+============================================================================ */
+
+const CFG = {
+  // --- grid ---
+  GW:160, GH:112, CELL:5,
+  MAX_ANTS:1200, MAX_BROOD:900,
+
+  // --- time ---
+  DAY_SECONDS:6,          // real seconds per simulated day at 1x
+
+  // --- pheromone -----------------------------------------------------------
+  // Czaczkes et al.: deposition is heavily front-loaded near the food source.
+  TRAIL_BASE:0.55,
+  TRAIL_FOOD_BOOST:22,    // up to 22x more within ~10cm of food
+  TRAIL_BOOST_RANGE:34,   // px over which that boost decays
+  TRAIL_EVAP:0.9955,      // per motion tick
+  TRAIL_MAX:9,
+  // Deposition drops when foragers meet nestmates (crowding feedback).
+  CROWD_K:0.10,
+  // NOTE: there is deliberately NO rule for reinforcing a trail to overwrite a
+  // stale/erroneous one. Ants cannot erase trails; only evaporation clears them.
+
+  // Home-range marking: passive CHC laid by every walking ant. Does not guide
+  // direction on its own, it amplifies responsiveness to the trail.
+  HOME_DEP:0.030, HOME_EVAP:0.99955, HOME_MAX:3, HOME_GAIN:0.85,
+
+  // --- worker motion ---
+  SPEED:34, TURN:3.4, WANDER:2.3,
+  SENS_D:9, SENS_A:0.62,
+
+  // --- worker internals ---
+  // Sensitivity is drawn per-ant. Low = scout (ignores marking, explores),
+  // high = recruit (locks onto trails). Patrollers fall in between.
+  // No caste is assigned; the distribution produces the roles.
+  SENS_MIN:0.15, SENS_MAX:1.0,
+  MEM_TRUST:0.55,         // above this, private memory overrides pheromone
+  OPPORTUNISM:0.18,       // chance of taking the nutrient she didn't come for
+  MEM_DECAY:0.45,         // multiplier when a remembered source is empty
+  CROP_MAX:1.0,
+  MATURE_DAYS:2.5,        // age before a worker will forage
+  EARLY_LIFE:430, LATE_LIFE:310,   // measured cohort life expectancies, days
+
+  // --- brood: degree-day model (LTT = lower threshold, SET = degree-days) ---
+  // Tuned to reproduce ~5wk egg-to-worker at 24C and ~8wk at 20C, matching the
+  // spread in the literature. Latitude of origin shifts these in real animals.
+  LTT:[12,11,13], SET:[130,160,140],
+  LARVA_PROTEIN:0.55,     // protein/day consumed per larva (the real cost)
+  BROOD_T_LO:23, BROOD_T_HI:26,   // band nurses carry brood toward
+
+  // --- queen: reserve pools -------------------------------------------------
+  // She is a closed system while founding. Three distinct stores, not one:
+  //   FAT     gaster fat body — lipids + storage proteins. L. niger queens carry
+  //           an exceptionally large one (>40% of body mass); species that found
+  //           by budding or parasitism, e.g. Formica rufa, have none.
+  //   MUSCLE  indirect flight muscle. She will never fly again, so it is
+  //           histolysed for protein. In L. niger this is slow: Janet found
+  //           adipocytes had fully replaced the muscle only ~10 months after
+  //           wing shedding.
+  //   CROP    thoracic crop — the oesophagus expands into a spindle and fills
+  //           with oily liquid larval food. Its formation is spatiotemporally
+  //           coordinated with muscle histolysis, so muscle drains into it.
+  Q_FAT0:1.0, Q_MUSCLE0:0.55,
+  Q_HISTOLYSIS:0.045,     // fraction of remaining muscle -> crop per day
+  Q_BASAL:0.0060,         // fat burned per day just staying alive
+  Q_EGG_FAT:0.0125,       // fat per egg while founding
+  Q_LARVA_CROP:0.0062,    // crop drawn per founding larva per day
+  Q_FOUND_BATCH:22,       // first cohort size before she pauses
+  Q_CANNIB:0.030,         // crop recovered by recycling one egg
+
+  // --- queen: established phase --------------------------------------------
+  Q_LAY_MAX:24,           // eggs/day at full trophallaxis support
+  Q_FEED_TARGET:5.0,      // crop units/day of inflow that saturates laying
+  Q_FEED_DECAY:0.55,
+  Q_RETINUE_R:26,
+  EGG_PROTEIN:0.8,
+  DIAPAUSE_T:14,          // below this she stops laying entirely
+
+  // --- queen: pheromone (3-MeC31) ------------------------------------------
+  // An honest fertility signal: amount tracks maturity and fecundity. It
+  // suppresses worker ovaries and lowers worker aggression. The catch, which is
+  // what makes it worth modelling, is that the same compound depresses the
+  // queen's own productivity — signalling is not free.
+  Q_QP_INVEST:0.75,       // how hard she signals, 0..1
+  Q_QP_COST:0.25,         // fecundity lost at full investment
+  Q_QP_RANGE:150,
+
+  // --- queen: lifespan -----------------------------------------------------
+  // Reproductive senescence is negligible until roughly 70% of lifespan.
+  // Fecundity is therefore flat for years, then falls — not a slow linear decay.
+  // (The famous ~29-year queen traces to an amateur's obituary note whose own
+  // dates don't add up, so treat it as folklore, not a design target.)
+  Q_LIFE_DAYS:5475,       // ~15 years
+  Q_SENESCE_AT:0.70,
+  Q_SPERM:14000,          // fertilised eggs available; then males only
+
+  // --- resources ---
+  SUGAR_BURN:0.02,        // per worker per day
+  PREY_UNIT:13,           // protein per item carried home
+
+  // --- environment ---------------------------------------------------------
+  // Food manages itself. Aphid colonies establish on nearby plants, build up,
+  // senesce with their host and vanish; new ones appear elsewhere. Prey turns
+  // up at random the way carrion and stray insects actually do.
+  //
+  // The balance is deliberately asymmetric, because the real one is: honeydew
+  // is abundant and carbohydrate is rarely the binding constraint, while
+  // protein arrives in unpredictable lumps. Colony size therefore oscillates
+  // around a protein-set ceiling instead of sitting flat.
+  ENV:{
+    APHID_MIN:3, APHID_MAX:8,        // standing patches, scaled by temperature
+    APHID_LIFE:[90,260],             // days before the host plant gives out
+    APHID_RATE:[7,17],               // honeydew/day at peak — species differ
+    APHID_CAP:130,
+    PREY_GAP:[1.6,3.6],              // days between arrivals at 25C
+    PREY_UNITS:[5,12],
+    PREY_ROT:30,                     // days before untouched prey is gone
+    R_MIN:70, R_MAX:330              // spawn distance from the nest
+  }
+};
+
+/* ---------------------------------------------------------------- utilities */
+let seed = 20260828;
+function rnd(){ seed|=0; seed=seed+0x6D2B79F5|0;
+  let t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t;
+  return ((t^t>>>14)>>>0)/4294967296; }
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const TAU=Math.PI*2;
+function angDelta(a,b){ let d=(b-a)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU; return d; }
+
+/* ================================================================== WORLD */
+const W=CFG.GW*CFG.CELL, H=CFG.GH*CFG.CELL, N=CFG.GW*CFG.GH;
+const OPEN=0, WALL=1, NEST=2;
+
+let terrain, trail, home, tempF, antCount;
+let colony, queen, brood, food, ants;
+let simDay, running=true, speed=1, ambient=22, diapause=false;
+const layers={trail:true, home:true, temp:false};
+
+const gi=(gx,gy)=>gy*CFG.GW+gx;
+function cellAt(x,y){
+  const gx=clamp(x/CFG.CELL|0,0,CFG.GW-1), gy=clamp(y/CFG.CELL|0,0,CFG.GH-1);
+  return gi(gx,gy);
+}
+const NEST_CX=W*0.5, NEST_CY=H*0.62, NEST_RX=34, NEST_RY=25;
+let entranceX, entranceY;
+
+function buildWorld(){
+  terrain=new Uint8Array(N); trail=new Float32Array(N);
+  home=new Float32Array(N);  tempF=new Float32Array(N);
+  const cx=NEST_CX/CFG.CELL, cy=NEST_CY/CFG.CELL;
+  for(let gy=0;gy<CFG.GH;gy++)for(let gx=0;gx<CFG.GW;gx++){
+    const dx=(gx-cx)/NEST_RX, dy=(gy-cy)/NEST_RY;
+    const d=dx*dx+dy*dy, ang=Math.atan2(gy-cy,gx-cx);
+    let t=OPEN;
+    if(d<0.90) t=NEST;
+    else if(d<1.10){
+      // one entrance gap on the sun-facing (upper) side
+      t = Math.abs(angDelta(ang,-Math.PI/2))<0.16 ? NEST : WALL;
+    }
+    terrain[gi(gx,gy)]=t;
+  }
+  entranceX=NEST_CX; entranceY=NEST_CY-NEST_RY*CFG.CELL-4;
+}
+
+// Temperature: warmest along the sun-exposed upper edge, cooling with distance.
+// Soil buffers the nest slightly. Nurses use this field to place brood.
+function refreshTemp(){
+  for(let gy=0;gy<CFG.GH;gy++){
+    const grad=6*(1-gy/CFG.GH);
+    for(let gx=0;gx<CFG.GW;gx++){
+      const i=gi(gx,gy);
+      tempF[i]=ambient+grad+(terrain[i]===NEST?-0.8:0);
+    }
+  }
+}
+const tempAt=(x,y)=>tempF[cellAt(x,y)];
+
+/* ================================================================ COLONY */
+function reset(){
+  buildWorld(); refreshTemp();
+  ants={ x:new Float32Array(CFG.MAX_ANTS), y:new Float32Array(CFG.MAX_ANTS),
+    a:new Float32Array(CFG.MAX_ANTS),  st:new Uint8Array(CFG.MAX_ANTS),
+    crop:new Float32Array(CFG.MAX_ANTS), load:new Uint8Array(CFG.MAX_ANTS),
+    age:new Float32Array(CFG.MAX_ANTS), life:new Float32Array(CFG.MAX_ANTS),
+    sens:new Float32Array(CFG.MAX_ANTS), conf:new Float32Array(CFG.MAX_ANTS),
+    mx:new Float32Array(CFG.MAX_ANTS), my:new Float32Array(CFG.MAX_ANTS),
+    carry:new Int16Array(CFG.MAX_ANTS), alive:new Uint8Array(CFG.MAX_ANTS),
+    nan:new Uint8Array(CFG.MAX_ANTS),
+    want:new Uint8Array(CFG.MAX_ANTS),    // nutrient this trip is for
+    memT:new Uint8Array(CFG.MAX_ANTS) };  // nutrient at the remembered source
+  antCount=0;
+  brood={ stage:new Uint8Array(CFG.MAX_BROOD), acc:new Float32Array(CFG.MAX_BROOD),
+    x:new Float32Array(CFG.MAX_BROOD), y:new Float32Array(CFG.MAX_BROOD),
+    held:new Int16Array(CFG.MAX_BROOD), alive:new Uint8Array(CFG.MAX_BROOD),
+    type:new Uint8Array(CFG.MAX_BROOD) };   // 0 worker  1 male  2 trophic egg
+  colony={ sugar:6, protein:4, larvae:0, broodN:0 };
+  // She has already flown, mated and sealed herself in. Everything from here
+  // comes out of her own body until the first workers open the nest.
+  queen={ x:NEST_CX, y:NEST_CY+16, a:rnd()*TAU,
+    phase:0,              // 0 founding  1 established  2 queenless (dead)
+    fat:CFG.Q_FAT0, muscle:CFG.Q_MUSCLE0, crop:0,
+    lay:0, fed:0, retinue:0, rate:0, qp:0,
+    sperm:CFG.Q_SPERM, age:0, alive:true };
+  food=[]; simDay=0; preyClock=0;
+  for(let k=0;k<5;k++) spawnAphidPatch(true);
+  for(let k=0;k<3;k++) spawnPrey();
+}
+
+function addAnt(x,y,nanitic){
+  if(antCount>=CFG.MAX_ANTS) return -1;
+  let i=-1; for(let k=0;k<CFG.MAX_ANTS;k++) if(!ants.alive[k]){i=k;break;}
+  if(i<0) return -1;
+  ants.x[i]=x; ants.y[i]=y; ants.a[i]=rnd()*TAU; ants.st[i]=0;
+  ants.crop[i]=0; ants.load[i]=0; ants.age[i]=0;
+  ants.life[i]=(nanitic?CFG.EARLY_LIFE:CFG.LATE_LIFE)*(0.7+rnd()*0.6);
+  // the response-threshold distribution that yields scouts / patrollers / recruits
+  ants.sens[i]=CFG.SENS_MIN+rnd()*(CFG.SENS_MAX-CFG.SENS_MIN);
+  ants.conf[i]=0; ants.carry[i]=-1; ants.alive[i]=1; ants.nan[i]=nanitic?1:0;
+  ants.want[i]=0; ants.memT[i]=0;
+  antCount++; return i;
+}
+function killAnt(i){
+  if(ants.carry[i]>=0) brood.held[ants.carry[i]]=-1;
+  ants.alive[i]=0; antCount--;
+}
+function addBrood(x,y,type){
+  for(let k=0;k<CFG.MAX_BROOD;k++) if(!brood.alive[k]){
+    brood.stage[k]=0; brood.acc[k]=0; brood.x[k]=x; brood.y[k]=y;
+    brood.held[k]=-1; brood.alive[k]=1; brood.type[k]=type||0; return k;
+  }
+  return -1;
+}
+const countBrood=()=>colony.broodN;
+
+/* ==========================================================================
+   WORKER_PROGRAM
+   The single behaviour function every worker runs. There is no per-caste code
+   and no central coordinator. Division of labour comes from three per-ant
+   scalars only: age, pheromone sensitivity, and private route confidence.
+
+   States: 0 in-nest  1 nursing  2 exploring  3 following  4 recalling  5 returning
+========================================================================== */
+function WORKER_PROGRAM(i, dt){
+  const S=ants;
+  const inNest = terrain[cellAt(S.x[i],S.y[i])]===NEST;
+
+  switch(S.st[i]){
+
+  /* --- 0: in the nest ---------------------------------------------------- */
+  case 0: {
+    // Returning forager unloads into the shared store.
+    if(S.crop[i]>0){ colony.sugar+=S.crop[i]; S.crop[i]=0; }
+
+    // Retinue trophallaxis. An attendant standing close to the queen passes
+    // her food drawn from the colony's crops — she is fed by the store, not
+    // by whoever happens to walk in the door. Feeding frequency scales with
+    // how many attendants she has, which is what couples her output to the
+    // workforce. If the store empties, laying stops without any explicit rule.
+    if(queen.alive && colony.sugar>0.5 &&
+       dist(S.x[i],S.y[i],queen.x,queen.y)<CFG.Q_RETINUE_R){
+      const give=Math.min(colony.sugar, 0.9*dt);
+      colony.sugar-=give; queen.fed+=give;
+    }
+    if(S.load[i]){ colony.protein+=CFG.PREY_UNIT; S.load[i]=0; }
+
+    // Young workers nurse. This is age polyethism, not an assigned job.
+    if(S.age[i]<CFG.MATURE_DAYS || rnd()<0.35){
+      const b=findMisplacedBrood(S.x[i],S.y[i]);
+      if(b>=0){ S.carry[i]=b; brood.held[b]=i; S.st[i]=1; break; }
+    }
+    // Foraging drive rises as the shared sugar store falls. A low-threshold
+    // (high-sensitivity) ant leaves sooner than a scout does.
+    if(S.age[i]>=CFG.MATURE_DAYS){
+      // Two independent hungers. Sugar fuels the adults; protein builds brood,
+      // and its demand tracks the larval load — which is why protein foraging
+      // peaks in the brood-rearing months rather than staying flat.
+      const sugarNeed  =clamp(1-colony.sugar  /(8+antCount*0.35),0,1);
+      const proteinNeed=clamp(1-colony.protein/(4+colony.larvae*2.2),0,1);
+      const need=Math.max(sugarNeed, proteinNeed);
+      if(rnd() < need*0.9*dt*6 + 0.02*dt*6){
+        // A forager leaves for a specific nutrient. Which one is set by whichever
+        // deficit is sharper, so protein trips rise with the larval load rather
+        // than the colony collecting whatever it happens to trip over.
+        S.want[i] = proteinNeed>sugarNeed ? 1 : 0;
+        // Private information wins when it is trustworthy — but only if the
+        // remembered source holds what she came out for.
+        const usable = S.conf[i]>CFG.MEM_TRUST && S.memT[i]===S.want[i];
+        S.st[i] = usable ? 4 : (rnd()<S.sens[i]?3:2);
+        break;
+      }
+    }
+    wander(i,dt,true);
+    break;
+  }
+
+  /* --- 1: nursing — relocate brood toward the preferred isotherm ---------- */
+  case 1: {
+    const b=S.carry[i];
+    if(b<0||!brood.alive[b]){ S.carry[i]=-1; S.st[i]=0; break; }
+    const t=tempAt(S.x[i],S.y[i]);
+    if(t>=CFG.BROOD_T_LO && t<=CFG.BROOD_T_HI){
+      brood.x[b]=S.x[i]; brood.y[b]=S.y[i]; brood.held[b]=-1;
+      S.carry[i]=-1; S.st[i]=0; break;
+    }
+    climbTemperature(i, t<CFG.BROOD_T_LO?1:-1, dt);
+    brood.x[b]=S.x[i]; brood.y[b]=S.y[i];
+    break;
+  }
+
+  /* --- 2: exploring — weak trail bias, mostly a correlated random walk ---- */
+  case 2: {
+    if(inNest){ headTo(i,entranceX,entranceY,dt); }
+    else { const g=CFG.HOME_GAIN*home[cellAt(S.x[i],S.y[i])];
+           senseTrail(i,dt,S.sens[i]*0.35*(1+g)); }
+    move(i,dt); layHome(i); tryPickup(i);
+    break;
+  }
+
+  /* --- 3: following a trail out of the nest ------------------------------ */
+  case 3: {
+    if(inNest){ headTo(i,entranceX,entranceY,dt); }
+    else {
+      const c=cellAt(S.x[i],S.y[i]);
+      // Home-range marking multiplies responsiveness to the trail itself.
+      const g=CFG.HOME_GAIN*home[c];
+      senseTrail(i,dt,S.sens[i]*(1+g));
+      if(trail[c]<0.02 && rnd()<dt*1.5) S.st[i]=2;   // trail lost -> explore
+    }
+    move(i,dt); layHome(i); tryPickup(i);
+    break;
+  }
+
+  /* --- 4: recalling a private memory (pheromone is ignored here) ---------- */
+  case 4: {
+    if(inNest && dist(S.x[i],S.y[i],S.mx[i],S.my[i])>40){ headTo(i,entranceX,entranceY,dt); }
+    else headTo(i,S.mx[i],S.my[i],dt);
+    move(i,dt); layHome(i);
+    if(!tryPickup(i) && dist(S.x[i],S.y[i],S.mx[i],S.my[i])<7){
+      S.conf[i]*=CFG.MEM_DECAY;                    // source was empty
+      if(S.conf[i]<0.2){ S.conf[i]=0; S.st[i]=2; }
+    }
+    break;
+  }
+
+  /* --- 5: returning with a load ----------------------------------------- */
+  case 5: {
+    headTo(i, inNest?queen.x:entranceX, inNest?queen.y:entranceY, dt);
+    move(i,dt); layHome(i); layTrail(i,dt);
+    if(inNest && dist(S.x[i],S.y[i],queen.x,queen.y)<34) S.st[i]=0;
+    break;
+  }}
+}
+
+/* ------------------------------------------------- worker program helpers */
+function dist(x1,y1,x2,y2){const a=x1-x2,b=y1-y2;return Math.sqrt(a*a+b*b);}
+
+function move(i,dt){
+  const S=ants, sp=CFG.SPEED*dt;
+  const nx=S.x[i]+Math.cos(S.a[i])*sp, ny=S.y[i]+Math.sin(S.a[i])*sp;
+  if(nx<2||nx>W-2||ny<2||ny>H-2||terrain[cellAt(nx,ny)]===WALL){
+    S.a[i]+=Math.PI*(0.5+rnd());                    // deflect off soil
+    return;
+  }
+  S.x[i]=nx; S.y[i]=ny;
+}
+function wander(i,dt,confine){
+  const S=ants;
+  S.a[i]+=(rnd()-0.5)*CFG.WANDER*4*dt;
+  if(confine && dist(S.x[i],S.y[i],NEST_CX,NEST_CY)>NEST_RX*CFG.CELL*0.8)
+    S.a[i]+=angDelta(S.a[i],Math.atan2(NEST_CY-S.y[i],NEST_CX-S.x[i]))*dt*4;
+  move(i,dt);
+}
+function headTo(i,tx,ty,dt){
+  const S=ants, want=Math.atan2(ty-S.y[i],tx-S.x[i]);
+  S.a[i]+=angDelta(S.a[i],want)*Math.min(1,CFG.TURN*dt)+(rnd()-0.5)*0.9*dt;
+}
+function climbTemperature(i,dir,dt){
+  const S=ants;
+  let best=-1e9,ba=S.a[i];
+  for(let k=-1;k<=1;k++){
+    const a=S.a[i]+k*0.7, px=S.x[i]+Math.cos(a)*8, py=S.y[i]+Math.sin(a)*8;
+    if(terrain[cellAt(px,py)]!==NEST) continue;
+    const v=dir*tempAt(px,py); if(v>best){best=v;ba=a;}
+  }
+  S.a[i]+=angDelta(S.a[i],ba)*Math.min(1,3*dt)+(rnd()-0.5)*0.7*dt;
+  move(i,dt);
+}
+// Three-sensor trail sampling. Gain is the ant's own sensitivity, which is
+// what makes some individuals scouts and others committed recruits.
+function senseTrail(i,dt,gain){
+  const S=ants;
+  const read=(a)=>{ const px=S.x[i]+Math.cos(a)*CFG.SENS_D, py=S.y[i]+Math.sin(a)*CFG.SENS_D;
+    return terrain[cellAt(px,py)]===WALL?-1:trail[cellAt(px,py)]; };
+  const l=read(S.a[i]-CFG.SENS_A), c=read(S.a[i]), r=read(S.a[i]+CFG.SENS_A);
+  if(c>=l && c>=r) S.a[i]+=(rnd()-0.5)*CFG.WANDER*dt;
+  else if(l>r)     S.a[i]-=CFG.TURN*gain*dt;
+  else             S.a[i]+=CFG.TURN*gain*dt;
+  S.a[i]+=(rnd()-0.5)*CFG.WANDER*dt*(1.6-gain);
+}
+function layHome(i){
+  const c=cellAt(ants.x[i],ants.y[i]);
+  home[c]=Math.min(CFG.HOME_MAX, home[c]+CFG.HOME_DEP);
+}
+// Deposition rule: strongly boosted near the source, scaled by source quality,
+// suppressed by encounters with nestmates. Never used to correct a bad trail.
+function layTrail(i,dt){
+  const S=ants, c=cellAt(S.x[i],S.y[i]);
+  const dFood=dist(S.x[i],S.y[i],S.mx[i],S.my[i]);
+  const boost=1+(CFG.TRAIL_FOOD_BOOST-1)*Math.exp(-dFood/CFG.TRAIL_BOOST_RANGE);
+  const crowd=1/(1+CFG.CROWD_K*localAnts(S.x[i],S.y[i]));
+  const q=S.load[i]?1.25:(0.4+S.crop[i]);
+  trail[c]=Math.min(CFG.TRAIL_MAX, trail[c]+CFG.TRAIL_BASE*boost*crowd*q*dt*8);
+}
+// Local density comes from a coarse occupancy grid rebuilt once per tick,
+// so crowding feedback stays O(1) per ant instead of O(n).
+const OCC_CELL=12, OW=Math.ceil(W/OCC_CELL), OH=Math.ceil(H/OCC_CELL);
+let occ=new Uint16Array(OW*OH);
+function buildOccupancy(){
+  occ.fill(0);
+  for(let k=0;k<CFG.MAX_ANTS;k++){
+    if(!ants.alive[k]) continue;
+    const ox=(ants.x[k]/OCC_CELL)|0, oy=(ants.y[k]/OCC_CELL)|0;
+    if(ox>=0&&ox<OW&&oy>=0&&oy<OH) occ[oy*OW+ox]++;
+  }
+}
+function localAnts(x,y){
+  const ox=clamp((x/OCC_CELL)|0,0,OW-1), oy=clamp((y/OCC_CELL)|0,0,OH-1);
+  return Math.max(0, occ[oy*OW+ox]-1);
+}
+function tryPickup(i){
+  const S=ants;
+  for(const f of food){
+    if(f.amount<=0) continue;
+    if(dist(S.x[i],S.y[i],f.x,f.y)>f.r) continue;
+    const t = f.type==="sugar" ? 0 : 1;
+    // Wrong nutrient for this trip: usually walked past, sometimes taken anyway.
+    if(t!==S.want[i] && rnd()>CFG.OPPORTUNISM) continue;
+    S.mx[i]=f.x; S.my[i]=f.y; S.memT[i]=t; S.conf[i]=1;   // learn it
+    if(t===0){ const take=Math.min(CFG.CROP_MAX,f.amount);
+      f.amount-=take; S.crop[i]=take; }
+    else { f.amount-=1; S.load[i]=1; }
+    S.st[i]=5; return true;
+  }
+  return false;
+}
+// Nurses draw from a shortlist of thermally misplaced brood, rebuilt every
+// few ticks rather than rescanned by every nurse on every tick.
+let misplaced=[], misplacedTick=0;
+function refreshMisplaced(){
+  misplaced.length=0;
+  for(let k=0;k<CFG.MAX_BROOD;k++){
+    if(!brood.alive[k]||brood.held[k]>=0) continue;
+    const t=tempAt(brood.x[k],brood.y[k]);
+    if(t<CFG.BROOD_T_LO || t>CFG.BROOD_T_HI) misplaced.push(k);
+  }
+}
+function findMisplacedBrood(x,y){
+  let best=-1,bd=70;
+  for(let n=0;n<misplaced.length;n++){
+    const k=misplaced[n];
+    if(!brood.alive[k]||brood.held[k]>=0) continue;
+    const d=dist(x,y,brood.x[k],brood.y[k]);
+    if(d<bd){bd=d;best=k;}
+  }
+  return best;
+}
+
+/* ==========================================================================
+   QUEEN_PROGRAM  —  separate from workers, as specified.
+   Fecundity is not a constant: it is gated by protein, by nurse support, and
+   by temperature. Below the diapause threshold she stops entirely.
+========================================================================== */
+function QUEEN_PROGRAM(dtDay, dt){
+  if(!queen.alive) return;
+  queen.age += dtDay;
+  if(queen.age > CFG.Q_LIFE_DAYS){
+    queen.alive=false; queen.phase=2; queen.qp=0; queen.rate=0; return;
+  }
+
+  /* --- movement: she stays with the brood, drifting slowly ---------------- */
+  const bc=broodCentroid();
+  if(bc) headQueen(bc.x, bc.y, dt); else queen.a+=(rnd()-0.5)*1.2*dt;
+  const nx=queen.x+Math.cos(queen.a)*3.5*dt, ny=queen.y+Math.sin(queen.a)*3.5*dt;
+  if(terrain[cellAt(nx,ny)]===NEST){ queen.x=nx; queen.y=ny; }
+  else queen.a+=Math.PI*(0.5+rnd());
+
+  const t=tempAt(queen.x,queen.y);
+
+  /* --- phase transition: the first worker ends the closed system ---------- */
+  if(queen.phase===0 && antCount>0) queen.phase=1;
+
+  /* ======================================================================
+     PHASE 0 — FOUNDING (claustral)
+     No intake at all. Flight muscle histolyses into the thoracic crop, the
+     crop feeds larvae, the fat body pays for her own metabolism and her eggs.
+     Target: she should arrive at first eclosion having shed ~half her mass.
+  ====================================================================== */
+  if(queen.phase===0){
+    const conv = queen.muscle * CFG.Q_HISTOLYSIS * dtDay;
+    queen.muscle -= conv; queen.crop += conv;
+    queen.fat = Math.max(0, queen.fat - CFG.Q_BASAL*dtDay);
+
+    // A single founding batch, then she waits. Laying more would spend
+    // reserves she cannot replace.
+    if(t>=CFG.DIAPAUSE_T && queen.fat>0.30 && countBrood()<CFG.Q_FOUND_BATCH){
+      queen.rate = 6*clamp((t-CFG.DIAPAUSE_T)/10,0,1.4);
+      queen.lay += queen.rate*dtDay;
+      while(queen.lay>=1 && queen.fat>0.30){
+        queen.lay-=1; queen.fat-=CFG.Q_EGG_FAT; queen.sperm--;
+        // Some of the first clutch are trophic eggs — laid as larval food,
+        // never meant to hatch.
+        addBrood(queen.x+(rnd()-.5)*14, queen.y+(rnd()-.5)*10, rnd()<0.18?2:0);
+      }
+    } else queen.rate=0;
+
+    // Reserve failure: recycle brood rather than starve. Documented, and
+    // rational — the brood is stored nutrient.
+    if(queen.crop<0.015 && countLarvae()>0) cannibaliseBrood();
+    if(queen.fat<=0.001 && queen.crop<=0.001){ queen.alive=false; queen.phase=2; queen.rate=0; }
+    queen.qp = 0.25;                       // immature signal, weak
+    return;
+  }
+
+  /* ======================================================================
+     PHASE 1 — ESTABLISHED
+     She no longer feeds herself. Fecundity is driven by what the retinue
+     actually delivers, so a foraging collapse propagates to egg output
+     without any explicit rule connecting them.
+  ====================================================================== */
+  queen.fed = Math.max(0, queen.fed - queen.fed*CFG.Q_FEED_DECAY*dtDay);
+  queen.retinue = countRetinue();
+  if(queen.fat < 1) queen.fat = Math.min(1, queen.fat + 0.004*dtDay*(queen.fed>1?1:0));
+
+  if(t < CFG.DIAPAUSE_T){ queen.rate=0; queen.qp*=0.998; return; }  // diapause
+
+  // Fecundity is gated by both channels the retinue supplies. Without the
+  // protein term she would keep laying into a famine and the larvae would
+  // starve behind her; throttling is what lets an existing cohort finish.
+  const nutrition = clamp(queen.fed/CFG.Q_FEED_TARGET, 0, 1);
+  const supply    = clamp(colony.protein/(6+colony.larvae*1.6), 0, 1);
+  const thermal   = clamp((t-CFG.DIAPAUSE_T)/10, 0, 1.5);
+  const senesce   = queen.age < CFG.Q_LIFE_DAYS*CFG.Q_SENESCE_AT ? 1
+                  : clamp(1-(queen.age-CFG.Q_LIFE_DAYS*CFG.Q_SENESCE_AT)/
+                            (CFG.Q_LIFE_DAYS*(1-CFG.Q_SENESCE_AT)), 0, 1);
+  const signalCost = 1 - CFG.Q_QP_COST*CFG.Q_QP_INVEST;
+
+  queen.rate = CFG.Q_LAY_MAX * nutrition * supply * thermal * senesce * signalCost;
+  // Honest signal: what she emits tracks what she is actually producing.
+  queen.qp = clamp(queen.rate/CFG.Q_LAY_MAX, 0, 1) * CFG.Q_QP_INVEST;
+
+  queen.lay += queen.rate*dtDay;
+  while(queen.lay>=1){
+    queen.lay-=1;
+    if(colony.protein<CFG.EGG_PROTEIN){ queen.lay=0; break; }
+    colony.protein-=CFG.EGG_PROTEIN;
+    // Sperm is finite and was banked on one flight. When it runs out she can
+    // still lay, but only unfertilised — male — eggs.
+    const type = queen.sperm>0 ? 0 : 1;
+    if(type===0) queen.sperm--;
+    addBrood(queen.x+(rnd()-.5)*16, queen.y+(rnd()-.5)*12, type);
+  }
+}
+
+/* ------------------------------------------------------- queen helpers */
+function headQueen(tx,ty,dt){
+  const want=Math.atan2(ty-queen.y,tx-queen.x);
+  queen.a+=angDelta(queen.a,want)*Math.min(1,1.2*dt)+(rnd()-0.5)*1.4*dt;
+}
+function broodCentroid(){
+  let sx=0,sy=0,n=0;
+  for(let k=0;k<CFG.MAX_BROOD;k++) if(brood.alive[k]){sx+=brood.x[k];sy+=brood.y[k];n++;}
+  return n?{x:sx/n,y:sy/n}:null;
+}
+const countLarvae=()=>colony.larvae;
+function countRetinue(){
+  const r=Math.ceil(CFG.Q_RETINUE_R/OCC_CELL);
+  const cx=(queen.x/OCC_CELL)|0, cy=(queen.y/OCC_CELL)|0;
+  let n=0;
+  for(let oy=cy-r;oy<=cy+r;oy++){
+    if(oy<0||oy>=OH) continue;
+    for(let ox=cx-r;ox<=cx+r;ox++){
+      if(ox<0||ox>=OW) continue;
+      n+=occ[oy*OW+ox];
+    }
+  }
+  return n;
+}
+// Eat the cheapest available brood: trophic eggs first, then ordinary eggs,
+// and only then a larva.
+function cannibaliseBrood(){
+  let pick=-1, best=9;
+  for(let k=0;k<CFG.MAX_BROOD;k++){
+    if(!brood.alive[k]) continue;
+    const cost = brood.type[k]===2 ? 0 : brood.stage[k]===0 ? 1 : 2;
+    if(cost<best){best=cost;pick=k;}
+  }
+  if(pick<0) return;
+  brood.alive[pick]=0;
+  queen.crop += CFG.Q_CANNIB*(best===2?2.2:1);
+}
+
+/* ============================================== BROOD — degree-day model */
+function stepBrood(dtDay){
+  let nB=0,nL=0;
+  for(let k=0;k<CFG.MAX_BROOD;k++){
+    if(!brood.alive[k]) continue;
+    nB++; if(brood.stage[k]===1) nL++;
+    if(brood.type[k]===2) continue;             // trophic eggs never develop
+    const st=brood.stage[k], t=tempAt(brood.x[k],brood.y[k]);
+    const eff=Math.max(0, t-CFG.LTT[st]);       // degree-days above threshold
+
+    if(st===1){
+      // Where a larva's food comes from is the whole difference between the
+      // two queen phases: her thoracic crop first, the shared store later.
+      if(queen.phase===0){
+        const need=CFG.Q_LARVA_CROP*dtDay;
+        if(queen.crop>=need) queen.crop-=need;
+        else if(!eatTrophicEgg()){ if(rnd()<dtDay*0.30) brood.alive[k]=0; continue; }
+      } else {
+        const need=CFG.LARVA_PROTEIN*dtDay;
+        if(colony.protein>=need) colony.protein-=need;
+        else if(!eatTrophicEgg()){ if(rnd()<dtDay*0.35) brood.alive[k]=0; continue; }
+      }
+    }
+
+    brood.acc[k]+=eff*dtDay;
+    if(brood.acc[k]>=CFG.SET[st]){
+      brood.acc[k]=0;
+      if(st<2){ brood.stage[k]=st+1; continue; }
+      brood.alive[k]=0;
+      if(brood.type[k]===1) continue;           // males do not join the workforce
+      // Cohort lifespan. Note this runs opposite to hobby lore: workers reared
+      // early in colony establishment are measured at ~430 days life expectancy
+      // versus ~310 for later cohorts. Nanitics are small, not short-lived.
+      addAnt(brood.x[k],brood.y[k], antCount<18);
+    }
+  }
+  colony.broodN=nB; colony.larvae=nL;
+}
+function eatTrophicEgg(){
+  for(let k=0;k<CFG.MAX_BROOD;k++)
+    if(brood.alive[k] && brood.type[k]===2){ brood.alive[k]=0; return true; }
+  return false;
+}
+
+/* ==================================================================== LOOP */
+function stepFields(){
+  const te=CFG.TRAIL_EVAP, he=CFG.HOME_EVAP;
+  for(let i=0;i<N;i++){ trail[i]*=te; home[i]*=he; }
+}
+function step(dt){
+  const dtDay=dt/CFG.DAY_SECONDS;
+  simDay+=dtDay;
+  buildOccupancy();
+  if((misplacedTick=(misplacedTick+1)%15)===0) refreshMisplaced();
+  for(let i=0;i<CFG.MAX_ANTS;i++){
+    if(!ants.alive[i]) continue;
+    ants.age[i]+=dtDay;
+    if(ants.age[i]>ants.life[i]){ killAnt(i); continue; }
+    WORKER_PROGRAM(i,dt);
+  }
+  QUEEN_PROGRAM(dtDay,dt);
+  stepBrood(dtDay);
+  stepFields();
+  colony.sugar=Math.max(0, colony.sugar - antCount*CFG.SUGAR_BURN*dtDay);
+  // The colony's sugar store is distributed crops, not a warehouse: it is
+  // bounded by how many crops there are to hold it.
+  colony.sugar=Math.min(colony.sugar, 14+antCount*0.5);
+  // Protein likewise is held in larvae and crops, not stockpiled in a granary.
+  colony.protein=Math.min(colony.protein, 40+antCount*1.2);
+  stepEnvironment(dtDay);
+}
+
+/* ================================================================ RENDER */
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+const off=document.createElement("canvas"); off.width=CFG.GW; off.height=CFG.GH;
+const octx=off.getContext("2d"), img=octx.createImageData(CFG.GW,CFG.GH);
+const terrCv=document.createElement("canvas"); terrCv.width=W; terrCv.height=H;
+
+function paintTerrain(){
+  const c=terrCv.getContext("2d");
+  c.fillStyle="#1B1510"; c.fillRect(0,0,W,H);
+  for(let gy=0;gy<CFG.GH;gy++)for(let gx=0;gx<CFG.GW;gx++){
+    const t=terrain[gi(gx,gy)]; if(t===OPEN) continue;
+    c.fillStyle = t===WALL ? "#0E0B08" : "#33271B";
+    c.fillRect(gx*CFG.CELL,gy*CFG.CELL,CFG.CELL,CFG.CELL);
+  }
+}
+function draw(){
+  ctx.drawImage(terrCv,0,0);
+
+  // scalar fields as a single composited layer
+  const d=img.data;
+  for(let i=0;i<N;i++){
+    const tr=layers.trail?Math.min(1,trail[i]/3.2):0;
+    const hm=layers.home ?Math.min(1,home[i]/1.6)*0.42:0;
+    const tp=layers.temp ?clamp((tempF[i]-14)/16,0,1)*0.34:0;
+    const o=i*4;
+    d[o  ]=233*tr + 168*tp;
+    d[o+1]=169*tr + 143*hm +  84*tp;
+    d[o+2]= 60*tr + 134*hm +  58*tp;
+    d[o+3]=Math.min(255,(tr*235+hm*150+tp*160));
+  }
+  octx.putImageData(img,0,0);
+  ctx.drawImage(off,0,0,W,H);
+
+  // food. Aphid colonies swell and fade with the vigour of their host plant;
+  // prey are single hard points that simply run out.
+  for(const f of food){
+    if(f.type==="sugar"){
+      const v=clamp(f.vigour,0,1), fill=clamp(f.amount/f.cap,0,1);
+      ctx.fillStyle="#6FB36A";
+      ctx.globalAlpha=0.10+0.16*v;
+      ctx.beginPath(); ctx.arc(f.x,f.y,f.r*(0.6+0.9*v),0,TAU); ctx.fill();
+      ctx.globalAlpha=0.30+0.60*fill;
+      ctx.beginPath(); ctx.arc(f.x,f.y,2.2+3.4*v*fill,0,TAU); ctx.fill();
+    } else {
+      ctx.fillStyle="#A8543A";
+      ctx.globalAlpha=0.35+0.65*clamp(f.amount/f.cap,0,1);
+      ctx.beginPath(); ctx.arc(f.x,f.y,3.4,0,TAU); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  }
+
+  // brood — chalk white, darkening through the stages; trophic eggs are dimmer
+  const bc=["#F0E9DC","#DCCBA8","#B8996B"];
+  for(let k=0;k<CFG.MAX_BROOD;k++){
+    if(!brood.alive[k]) continue;
+    ctx.fillStyle = brood.type[k]===2 ? "#6E6355"
+                  : brood.type[k]===1 ? "#8FA8C4" : bc[brood.stage[k]];
+    ctx.fillRect(brood.x[k]-1.2,brood.y[k]-1.2,2.4,2.4);
+  }
+
+  // workers
+  for(let i=0;i<CFG.MAX_ANTS;i++){
+    if(!ants.alive[i]) continue;
+    ctx.fillStyle = ants.load[i]||ants.crop[i]>0 ? "#E9A93C"
+                  : ants.nan[i] ? "#9B8F7C" : "#DCD3C2";
+    const s=ants.nan[i]?1.7:2.1;
+    ctx.fillRect(ants.x[i]-s/2,ants.y[i]-s/2,s,s);
+  }
+
+  // queen — halo radius reads her pheromone output, body size reads her mass
+  if(queen.alive){
+    if(queen.qp>0.02){
+      ctx.strokeStyle="#E9A93C"; ctx.globalAlpha=0.10+0.22*queen.qp; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(queen.x,queen.y,CFG.Q_QP_RANGE*0.16*queen.qp+8,0,TAU);
+      ctx.stroke(); ctx.globalAlpha=1;
+    }
+    const m=queenMass(), r=2.6+2.6*m;
+    ctx.strokeStyle=queen.phase===0?"#C98A4B":"#E9A93C"; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.arc(queen.x,queen.y,r,0,TAU); ctx.stroke();
+    ctx.fillStyle="#E9A93C"; ctx.fillRect(queen.x-1.7,queen.y-1.7,3.4,3.4);
+  } else {
+    ctx.strokeStyle="#6E6355"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(queen.x,queen.y,4,0,TAU); ctx.stroke();
+  }
+}
+
+/* =============================================================== UI WIRING */
+const el=id=>document.getElementById(id);
+// Body mass as a fraction of her mass at sealing. A successful founding queen
+// arrives at first eclosion having spent roughly half of herself.
+function queenMass(){ return 0.45 + 0.35*queen.fat + 0.20*queen.muscle; }
+
+function stats(){
+  let e=0,l=0,p=0,out=0;
+  for(let k=0;k<CFG.MAX_BROOD;k++) if(brood.alive[k])
+    (brood.stage[k]===0?e++:brood.stage[k]===1?l++:p++);
+  for(let i=0;i<CFG.MAX_ANTS;i++) if(ants.alive[i]&&ants.st[i]>=2) out++;
+  el("s-day").textContent=simDay.toFixed(0);
+  el("s-work").textContent=antCount;
+  el("s-egg").textContent=e; el("s-lar").textContent=l; el("s-pup").textContent=p;
+  el("s-sug").textContent=colony.sugar.toFixed(0);
+  el("s-pro").textContent=colony.protein.toFixed(0);
+  el("s-out").textContent=out;
+  let ap=0,pr=0; for(const f of food) f.type==="sugar"?ap++:pr++;
+  el("s-aph").textContent=ap; el("s-prey").textContent=pr;
+
+  el("q-phase").textContent = !queen.alive ? "dead"
+    : queen.phase===0 ? "founding" : tempAt(queen.x,queen.y)<CFG.DIAPAUSE_T
+    ? "diapause" : queen.age>CFG.Q_LIFE_DAYS*CFG.Q_SENESCE_AT ? "senescent" : "laying";
+  el("q-mass").textContent=(queenMass()*100).toFixed(0)+"%";
+  el("q-fat").textContent=(queen.fat*100).toFixed(0)+"%";
+  el("q-crop").textContent=(queen.crop*100).toFixed(0);
+  el("q-rate").textContent=queen.rate.toFixed(1);
+  el("q-ret").textContent=queen.retinue;
+  el("q-qp").textContent=queen.qp.toFixed(2);
+  el("q-sperm").textContent=Math.max(0,queen.sperm|0);
+}
+/* ============================================== AUTONOMOUS ENVIRONMENT */
+const lerp=(a,b,t)=>a+(b-a)*t;
+const pick=(r)=>lerp(r[0],r[1],rnd());
+
+// Somewhere on open ground, far enough out that finding it is work.
+function spawnSite(){
+  for(let tries=0;tries<60;tries++){
+    const ang=rnd()*TAU, rad=pick([CFG.ENV.R_MIN,CFG.ENV.R_MAX]);
+    const x=NEST_CX+Math.cos(ang)*rad, y=NEST_CY+Math.sin(ang)*rad;
+    if(x<14||x>W-14||y<14||y>H-14) continue;
+    if(terrain[cellAt(x,y)]!==OPEN) continue;
+    return {x,y};
+  }
+  return null;
+}
+function spawnAphidPatch(seeded){
+  const p=spawnSite(); if(!p) return;
+  const life=pick(CFG.ENV.APHID_LIFE);
+  food.push({ x:p.x, y:p.y, type:"sugar", r:11,
+    amount:seeded?30:0, cap:CFG.ENV.APHID_CAP,
+    rate:pick(CFG.ENV.APHID_RATE), age:seeded?life*rnd()*0.5:0, life, vigour:0 });
+}
+function spawnPrey(){
+  const p=spawnSite(); if(!p) return;
+  const n=Math.round(pick(CFG.ENV.PREY_UNITS));
+  food.push({ x:p.x, y:p.y, type:"protein", r:8, amount:n, cap:n, age:0,
+    life:CFG.ENV.PREY_ROT, rate:0, vigour:1 });
+}
+
+let preyClock=0;
+function stepEnvironment(dtDay){
+  const warmth=clamp((ambient-10)/16,0,1);
+
+  for(let i=food.length-1;i>=0;i--){
+    const f=food[i];
+    f.age+=dtDay;
+    if(f.type==="sugar"){
+      // Build-up, plateau, senescence — the arc of an aphid colony on a plant.
+      const t=f.age/f.life;
+      f.vigour = t<0.18 ? t/0.18 : t>0.72 ? clamp((1-t)/0.28,0,1) : 1;
+      f.amount=Math.min(f.cap, f.amount + f.rate*f.vigour*(0.35+0.65*warmth)*dtDay);
+      if(f.age>f.life){ food.splice(i,1); continue; }
+    } else {
+      if(f.age>f.life || f.amount<=0){ food.splice(i,1); continue; }
+    }
+  }
+
+  // Keep the standing crop of aphid colonies near its temperature-set target.
+  const target=Math.round(lerp(CFG.ENV.APHID_MIN,CFG.ENV.APHID_MAX,warmth));
+  let n=0; for(const f of food) if(f.type==="sugar") n++;
+  if(n<target && rnd()<dtDay*0.5) spawnAphidPatch(false);
+
+  // Prey arrives on its own clock, faster when it is warm.
+  preyClock-=dtDay*(0.3+1.4*warmth);
+  if(preyClock<=0){ spawnPrey(); preyClock=pick(CFG.ENV.PREY_GAP); }
+}
+el("b-play").onclick=e=>{ running=!running;
+  e.target.textContent=running?"Pause":"Play"; e.target.setAttribute("aria-pressed",running); };
+el("b-reset").onclick=()=>{ seed=20260828; reset(); paintTerrain(); };
+document.querySelectorAll(".spd").forEach(b=>b.onclick=()=>{
+  speed=+b.dataset.s;
+  document.querySelectorAll(".spd").forEach(o=>o.setAttribute("aria-pressed",o===b));});
+document.querySelectorAll(".lyr").forEach(b=>b.onclick=()=>{
+  layers[b.dataset.l]=!layers[b.dataset.l];
+  b.setAttribute("aria-pressed",layers[b.dataset.l]);});
+el("r-temp").oninput=e=>{ ambient=+e.target.value;
+  el("v-temp").textContent=ambient.toFixed(1)+"\u00B0C"; refreshTemp(); syncSeason(); };
+el("b-season").onclick=()=>{
+  diapause=!diapause; ambient=diapause?8:22;
+  el("r-temp").value=ambient; el("v-temp").textContent=ambient.toFixed(1)+"\u00B0C";
+  refreshTemp(); syncSeason(); };
+function syncSeason(){
+  diapause = ambient<CFG.DIAPAUSE_T;
+  el("b-season").textContent = diapause ? "End diapause" : "Enter diapause";
+}
+
+/* ---------------------------------------------------------------- main loop */
+reset(); paintTerrain();
+
+let last=performance.now(), acc=0, statTick=0;
+function frame(now){
+  const raw=Math.min(0.05,(now-last)/1000); last=now;
+  if(running){
+    acc+=raw*speed;
+    let guard=0;
+    while(acc>1/60 && guard++<40){ step(1/60); acc-=1/60; }
+    if(acc>1) acc=0;
+  }
+  draw();
+  if((statTick=(statTick+1)%12)===0) stats();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

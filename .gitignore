@@ -1,0 +1,4 @@
+*.out
+*.log
+*.tsv
+node_modules/

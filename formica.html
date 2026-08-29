@@ -1,0 +1,2015 @@
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* ============================================================
+   FORMICA — Lasius niger colony simulator
+   Palette: soil umber ground, amber pheromone (the signature),
+   teal home-marking, bone-white ants, chalk brood.
+   ============================================================ */
+:root{
+  --loam:#14100C;
+  --soil:#221A13;
+  --chamber:#33271B;
+  --bone:#DCD3C2;
+  --chalk:#F0E9DC;
+  --amber:#E9A93C;
+  --teal:#4E8F86;
+  --rust:#A8543A;
+  --dim:#7A6B58;
+  --line:#2E251B;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--loam);color:var(--bone);
+  font-family:var(--mono);font-size:13px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:920px;margin:0 auto;padding:14px}
+
+header{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  padding-bottom:10px;border-bottom:1px solid var(--line);margin-bottom:12px}
+h1{margin:0;font-size:15px;font-weight:600;letter-spacing:.22em;text-transform:uppercase}
+header .sub{color:var(--dim);font-size:11px;letter-spacing:.08em}
+
+/* --- the canvas is the hero --- */
+.stage{position:relative;border:1px solid var(--line);background:#0D0A07;
+  border-radius:2px;overflow:hidden;line-height:0}
+canvas{width:100%;height:auto;display:block;touch-action:none}
+
+/* --- vitals strip --- */
+.vitals{display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);margin-top:12px}
+.v{background:var(--loam);padding:7px 8px}
+.v b{display:block;font-size:17px;font-weight:600;letter-spacing:.01em;color:var(--chalk)}
+.v span{display:block;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-top:2px}
+.v.acc b{color:var(--amber)}
+.v.cold b{color:var(--teal)}
+
+/* --- controls --- */
+.panel{margin-top:12px;border:1px solid var(--line);padding:11px}
+.row{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:9px}
+.row:last-child{margin-bottom:0}
+.lab{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);
+  width:100%;margin-bottom:1px}
+button{font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+  background:transparent;color:var(--bone);border:1px solid var(--line);
+  padding:6px 11px;cursor:pointer;border-radius:2px;transition:border-color .12s,color .12s}
+button:hover{border-color:var(--dim)}
+button:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+button[aria-pressed="true"]{border-color:var(--amber);color:var(--amber)}
+input[type=range]{accent-color:var(--amber);flex:1;min-width:110px;height:20px}
+.val{color:var(--chalk);min-width:52px;text-align:right;font-size:11px}
+.qhead{margin:14px 0 6px;font-size:9px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--amber)}
+footer{margin-top:12px;color:var(--dim);font-size:10px;line-height:1.65;
+  border-top:1px solid var(--line);padding-top:9px}
+footer b{color:var(--bone);font-weight:600}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>Formica</h1>
+  <span class="sub">Lasius niger &middot; agent-based colony &middot; v1.8a</span>
+</header>
+
+<div class="stage">
+  <canvas id="cv" width="800" height="560"></canvas>
+</div>
+
+<div class="vitals">
+  <div class="v"><b id="s-day">0</b><span>Day</span></div>
+  <div class="v"><b id="s-work">0</b><span>Workers</span></div>
+  <div class="v"><b id="s-egg">0</b><span>Eggs</span></div>
+  <div class="v"><b id="s-lar">0</b><span>Larvae</span></div>
+  <div class="v"><b id="s-pup">0</b><span>Pupae</span></div>
+  <div class="v acc"><b id="s-sug">0</b><span>Crop total</span></div>
+  <div class="v acc"><b id="s-pro">0</b><span>Larder</span></div>
+  <div class="v cold"><b id="s-out">0</b><span>Foraging</span></div>
+  <div class="v"><b id="s-hun">0</b><span>Hungry ants</span></div>
+  <div class="v"><b id="s-aph">0</b><span>Aphid colonies</span></div>
+  <div class="v"><b id="s-prey">0</b><span>Prey out there</span></div>
+  <div class="v"><b id="s-nest">0</b><span>Nest cells</span></div>
+  <div class="v"><b id="s-cpa">0</b><span>Cells / ant</span></div>
+  <div class="v cold"><b id="s-rate">0</b><span>Sim days / sec</span></div>
+</div>
+
+<p class="qhead">The queen</p>
+<div class="vitals">
+  <div class="v"><b id="q-phase">&mdash;</b><span>Phase</span></div>
+  <div class="v"><b id="q-mass">100%</b><span>Body mass</span></div>
+  <div class="v"><b id="q-fat">100%</b><span>Fat body</span></div>
+  <div class="v"><b id="q-crop">0</b><span>Thoracic crop</span></div>
+  <div class="v acc"><b id="q-rate">0</b><span>Eggs / day</span></div>
+  <div class="v"><b id="q-ret">0</b><span>Retinue</span></div>
+  <div class="v acc"><b id="q-qp">0</b><span>3-MeC31</span></div>
+  <div class="v cold"><b id="q-sperm">0</b><span>Sperm left</span></div>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <span class="lab">Run</span>
+    <button id="b-play" aria-pressed="true">Pause</button>
+    <button class="spd" data-s="1" aria-pressed="true">1&times;</button>
+    <button class="spd" data-s="4" aria-pressed="false">4&times;</button>
+    <button class="spd" data-s="16" aria-pressed="false">16&times;</button>
+    <button class="spd" data-s="64" aria-pressed="false">64&times;</button>
+    <button id="b-insane" aria-pressed="false">Insane</button>
+    <button id="b-marathon" aria-pressed="true" title="On run end: save log, restart automatically">Marathon</button>
+    <button id="b-savelog" title="Download the running log now">Save log</button>
+    <button id="b-reset">Reset</button>
+  </div>
+  <div class="row">
+    <span class="lab">Show</span>
+    <button class="lyr" data-l="trail" aria-pressed="true">Trail</button>
+    <button class="lyr" data-l="home" aria-pressed="true">Home marking</button>
+    <button class="lyr" data-l="temp" aria-pressed="false">Temperature</button>
+  </div>
+  <div class="row">
+    <span class="lab">Ambient temperature</span>
+    <input type="range" id="r-temp" min="4" max="30" step="0.5" value="22">
+    <span class="val" id="v-temp">22.0&deg;C</span>
+  </div>
+  <div class="row">
+    <button id="b-seasons" aria-pressed="true">Seasons</button>
+    <button id="b-season">Enter diapause</button>
+  </div>
+</div>
+
+<footer>
+  <b>The nest tracks the colony both ways.</b> Crowding drives excavation and
+  surplus space drives backfilling, with a wide gap between the two so neither
+  chases the other. A cell is only filled when its excavated neighbours form a
+  single run around it &mdash; a condition that provably cannot sever a gallery or
+  seal the entrance, and one the simulation checks by walking every nest cell
+  from the mouth on each sample.<br><br>
+  <b>Dormancy comes from inside the colony.</b> L. niger runs an endogenous
+  annual cycle: after spring reactivation the queen has a fixed period, and when
+  it elapses she stops &mdash; in late summer, well before it turns cold. Chilling
+  is what arms reactivation; spring warmth triggers it. So winter cannot be
+  skipped, only spent warm, and a colony held at summer temperature sits dormant
+  at full metabolic rate, ageing and burning reserves while producing nothing.
+  Nothing penalises it for that; the cost is only arithmetic.<br><br>
+  <b>The year turns on its own.</b> Temperature follows a sinusoid from 7&deg;C in
+  midwinter to 25&deg;C at the peak, and one scalar &mdash; how fast an ant does
+  anything &mdash; carries it into every rate. Nothing has a winter switch. Digging
+  slows because diggers move slowly, which is what the excavation work found:
+  ants dig the same nests, faster, when warm. Workers bank fat in autumn and live
+  off it; larvae that are too cold to develop are too cold to be hungry, so a
+  cohort overwinters instead of starving.<br><br>
+  <b>Brood sorts itself into rings.</b> There are no egg, larva and pupa rooms.
+  An ant carries an item a random direction by a distance that depends only on
+  what it is; small items diffuse least and stay central, and isolated items are
+  the ones most likely to be picked up, which pulls inward. That balance alone
+  produces concentric annuli — eggs innermost, pupae intermediate, larvae
+  outermost. No template, no target radius, no assigned chambers.<br><br>
+  <b>The nest is dug, not drawn.</b> Workers start in the chamber a founding queen
+  excavated and enlarge it themselves. Nobody measures the nest: an ant digs when
+  the space around her is crowded, and enlarging it spreads everyone out, which
+  stops the digging. Volume proportional to population falls out of that loop —
+  measured at 2.5 to 3.6 cells per ant across a fourfold change in colony size.
+  Spoil is hauled to the mouth, which is where the mound comes from.<br><br>
+  <b>No global food variables.</b> Carbohydrate lives in individual crops and moves
+  by trophallaxis, where the volume passed is set by the receiver's empty space.
+  Larval hunger reaches foragers one nurse-to-larva contact at a time, and the queen
+  begs her attendants when the larder runs dry. No ant, including her, can read a
+  colony total. The crop and larder figures below are derived readouts only —
+  nothing in the model reads them back.<br><br>
+  <b>One program per caste.</b> Every worker runs the same <code>WORKER_PROGRAM</code>;
+  the queen runs <code>QUEEN_PROGRAM</code>. Castes, trails, traffic, brood placement and
+  colony size are emergent, not scripted. Aphid colonies establish, peak and senesce on
+  their own; prey turns up at random. Nothing here needs tending. Rules are annotated in
+  source with the finding they came from.
+</footer>
+</div>
+
+<script>
+"use strict";
+/* ============================================================================
+   ARCHITECTURE
+
+   world     static terrain + scalar fields (temperature)
+   fields    trail pheromone, home-range marking  (Float32Array grids)
+   ants      structure-of-arrays, fixed capacity, one behaviour function
+   brood     structure-of-arrays, degree-day development model
+   colony    shared sugar/protein stores (stands in for trophallaxis)
+
+   TWO CLOCKS, deliberately decoupled:
+     - motion runs on real seconds so foraging is watchable
+     - development runs on sim-days so a colony matures in minutes
+   DAY_SECONDS sets the ratio. This is a presentation compromise, not biology.
+============================================================================ */
+
+const CFG = {
+  // --- grid ---
+  GW:160, GH:112, CELL:5,
+  // Mature L. niger colonies average ~5,500 workers. 1,200 was an array bound
+  // masquerading as an ecological ceiling — every "plateau" measured against it
+  // was really the colony hitting the edge of its own storage.
+  MAX_ANTS:6000, MAX_BROOD:4000,
+
+  // --- time ---
+  DAY_SECONDS:14,         // real seconds per simulated day at 1x.
+                          // This is the search-budget knob: an ant covers
+                          // SPEED*DAY_SECONDS px per sim-day. At 6s/day a
+                          // forager could physically never reach most food
+                          // inside her trip budget — the colony starved on
+                          // geometry, not on rules.
+
+  // --- pheromone -----------------------------------------------------------
+  // Czaczkes et al.: deposition is heavily front-loaded near the food source.
+  TRAIL_BASE:0.55,
+  TRAIL_FOOD_BOOST:22,    // up to 22x more within ~10cm of food
+  TRAIL_BOOST_RANGE:34,   // px over which that boost decays
+  TRAIL_EVAP:0.9990,      // per motion tick; must outlast a round trip
+  EVAP_EVERY:4,           // ticks between field decay passes
+  MAX_SUBSTEPS:400,       // per frame; the old value of 40 capped speed at 16x
+  INSANE_MS:11,           // ms of each frame handed to the simulation
+  TRAIL_MAX:9,
+  // Deposition drops when foragers meet nestmates (crowding feedback).
+  CROWD_K:0.10,
+  // NOTE: there is deliberately NO rule for reinforcing a trail to overwrite a
+  // stale/erroneous one. Ants cannot erase trails; only evaporation clears them.
+
+  // Home-range marking: passive CHC laid by every walking ant. Does not guide
+  // direction on its own, it amplifies responsiveness to the trail.
+  HOME_DEP:0.030, HOME_EVAP:0.99955, HOME_MAX:3, HOME_GAIN:0.85,
+
+  // --- worker motion ---
+  SPEED:44, TURN:3.4, WANDER:2.3,
+  SENS_D:9, SENS_A:0.62,
+
+  // --- worker internals ---
+  // Sensitivity is drawn per-ant. Low = scout (ignores marking, explores),
+  // high = recruit (locks onto trails). Patrollers fall in between.
+  // No caste is assigned; the distribution produces the roles.
+  SENS_MIN:0.15, SENS_MAX:1.0,
+  MEM_TRUST:0.55,         // above this, private memory overrides pheromone
+
+  // --- distributed nutrition (Greenwald et al. 2018) -----------------------
+  // There is no colony-level food store and no ant reads one. Carbohydrate
+  // lives in individual crops and moves by trophallaxis. Two local rules do
+  // all the regulating:
+  //   RECEIVER fullness sets how much passes in an interaction — the volume
+  //     scales with the recipient's empty crop space (crop-wall tension).
+  //   DONOR fullness sets how often a forager leaves — she departs once she
+  //     has managed to shed enough of her load.
+  // Because a returning forager meets ants that are, on average, representative
+  // of the whole colony's satiety, her unloading rate ends up proportional to
+  // colony hunger without anyone measuring colony hunger. Global regulation,
+  // local information only.
+  METAB:0.018,            // crop drained per ant per day
+  TROPH_FRAC:0.45,        // share of the recipient's empty space passed per bout
+  TROPH_RATE:2.2,         // trophallaxis attempts per ant per second in nest
+  EXIT_CROP:0.30,         // she leaves again once her own load falls below this
+  TRIP_MAX:2.2,           // sim-days before a fruitless trip is abandoned
+  HUNGRY:0.40,            // below this she wants feeding herself
+
+  // --- larval demand -------------------------------------------------------
+  // Portha et al.: at the source, a L. niger forager's decision depends on the
+  // food type and her own state — there is no evidence larvae influence it.
+  // Larvae act earlier, on MOBILISATION: contact with hungry larvae is what
+  // sends more ants out. So hunger propagates by nurse-to-larva contact, not
+  // by broadcast.
+  LARVA_HUNGER:0.30,      // hunger accrued per larva per day
+  LARVA_MEAL:1.0,
+  PDRIVE_GAIN:0.35,       // per SECOND of contact with unfed larvae
+  QSOLICIT_GAIN:0.12,     // per trophallaxis bout with a begging queen
+  PDRIVE_DECAY:1.1,       // per day
+  PDRIVE_TRIGGER:0.75,
+  LARDER_R:26,
+  // Probed: during the feeding season a nurse standing over a hungry larva
+  // finds no cache in reach 98% of the time. When none is in reach anywhere,
+  // that is famine and she signals for foragers; when one exists further off,
+  // she fetches a meal and carries it back rather than leaving the larva
+  // hungry next to a full pantry.
+  FETCH_R:260,            // how far she will go for a meal
+  FETCH_TMAX:6,           // real seconds before a fetch or delivery is abandoned
+
+  // --- excavation (Rasse & Deneubourg 2001) --------------------------------
+  // Nest volume and digging rate both scale almost proportionally with worker
+  // number, and digging is under negative feedback from the volume itself plus
+  // a behavioural change in ants that have just dug.
+  // Neither is coded as a rule. An ant digs when the space around her is
+  // crowded; enlarging the nest spreads everyone out, which lowers local
+  // density, which stops the digging. The volume feedback IS the crowding
+  // feedback. The post-dig change is a per-ant refractory period.
+  DIG_RATE:1.5,           // dig attempts per ant per second while in the nest
+  // A 3x3 density block spans ~52 nest cells, so this threshold sets the
+  // equilibrium directly: cells-per-ant settles near 52/DIG_DENS_LO.
+  DIG_USE:22,             // sustained 3x3 occupancy above which she digs
+  DIG_USE_SPAN:14,
+  DIG_REFRACT:0.9,        // refractory recovered per sim-day
+  DIG_PATIENCE:2.0,       // real seconds hunting for a face before giving up
+
+  // --- backfilling ----------------------------------------------------------
+  // Excavation only ever ratcheted upward, so any population decline inflated
+  // cells-per-ant permanently and the volume law broke under a seasonal cycle.
+  // Real L. niger refills chambers; the nest tracks the colony both ways.
+  // The trigger is the mirror of digging — too MUCH space around her — with a
+  // wide gap between the two thresholds so a colony cannot oscillate between
+  // digging and filling the same cell.
+  // Filling answers a SLOW signal where digging answers a fast one. Judged on
+  // instantaneous density, ants dispersing for an afternoon read as surplus
+  // space and a wall goes back up: 92% of all excavation was being undone,
+  // against a traced-sediment benchmark of ~2.5% redeposited. So fill responds
+  // to occupancy averaged over weeks — a region must stand genuinely abandoned
+  // before anyone walls it off — while dig keeps reacting to the moment's
+  // crowding, which is what makes excavation front-loaded and bursty.
+  FILL_RATE:1.2,          // fill attempts per ant per second while in the nest
+  FILL_USE:1.2,           // sustained 3x3 occupancy below which space is dead
+  FILL_SPAN:1.2,
+  USE_TAU:15,             // days over which occupancy is averaged
+  CELL_COMMIT:240,        // days before freshly dug space may be reconsidered
+  REMODEL_T:12,           // below this nobody digs or fills: the winter lull
+  NEST_MIN:200,           // never shrink below the founding chamber
+  SOIL_R:44,              // radius of diggable ground, in cells
+  // A hauled fragment is butchered into several larval meals. Raising this is a
+  // granularity change, not a food buff: carcass stock below is divided by the
+  // same factor, so meals per carcass are unchanged and only the number of
+  // trips needed to move them falls.
+  LARDER_PER_CARRY:3,     // meals butchered from one carried piece
+  MEM_DECAY:0.45,         // multiplier when a remembered source is empty
+  CROP_MAX:1.0,
+  MATURE_DAYS:2.5,        // age before a worker will forage
+  EARLY_LIFE:430, LATE_LIFE:310,   // measured cohort life expectancies, days
+
+  // --- brood: degree-day model (LTT = lower threshold, SET = degree-days) ---
+  // Tuned to reproduce ~5wk egg-to-worker at 24C and ~8wk at 20C, matching the
+  // spread in the literature. Latitude of origin shifts these in real animals.
+  LTT:[12,11,13], SET:[130,160,140],
+  LARVA_PROTEIN:0.55,     // protein/day consumed per larva (the real cost)
+  BROOD_T_LO:23, BROOD_T_HI:26,   // weak thermal bias, secondary to sorting
+
+  // --- brood sorting (Sendova-Franks et al. 2004) --------------------------
+  // Two phases: clustering, then spacing, where an ant carries an item a
+  // random direction by a TYPE-SPECIFIC distance. Small items diffuse least
+  // and end up central; large ones spread furthest. Pupae sit intermediate,
+  // which is the counterintuitive part — they are not on the outside.
+  // No template is needed and none is used: an ant reads only how many brood
+  // items lie near the one she is holding.
+  // Outward diffusion is balanced by an inward pull, because isolated items
+  // are the ones most likely to be picked up. That balance sets a
+  // characteristic radius per type, and the radii are the annuli.
+  BROOD_SIGMA:[7,28,16],          // carry distance: egg, larva, pupa
+  BROOD_SETTLED:5,                // neighbours at which an item counts as settled
+  BROOD_SORT_RATE:2.4,            // pickup attempts per nurse per second
+  BROOD_CARRY_MAX:1.6,            // real seconds before she gives up carrying
+
+  // --- queen: reserve pools -------------------------------------------------
+  // She is a closed system while founding. Three distinct stores, not one:
+  //   FAT     gaster fat body — lipids + storage proteins. L. niger queens carry
+  //           an exceptionally large one (>40% of body mass); species that found
+  //           by budding or parasitism, e.g. Formica rufa, have none.
+  //   MUSCLE  indirect flight muscle. She will never fly again, so it is
+  //           histolysed for protein. In L. niger this is slow: Janet found
+  //           adipocytes had fully replaced the muscle only ~10 months after
+  //           wing shedding.
+  //   CROP    thoracic crop — the oesophagus expands into a spindle and fills
+  //           with oily liquid larval food. Its formation is spatiotemporally
+  //           coordinated with muscle histolysis, so muscle drains into it.
+  Q_FAT0:1.0, Q_MUSCLE0:0.55,
+  Q_HISTOLYSIS:0.045,     // fraction of remaining muscle -> crop per day
+  Q_BASAL:0.0060,         // fat burned per day just staying alive
+  Q_EGG_FAT:0.0125,       // fat per egg while founding
+  Q_LARVA_CROP:0.0062,    // crop drawn per founding larva per day
+  Q_FOUND_BATCH:22,       // first cohort size before she pauses
+  Q_CANNIB:0.030,         // crop recovered by recycling one egg
+
+  // --- queen: established phase --------------------------------------------
+  Q_LAY_MAX:24,           // eggs/day at full trophallaxis support
+  Q_FEED_TARGET:1.6,      // held crop that saturates her laying
+  Q_CROP:2.5,             // her own crop capacity — she cannot absorb forever
+  Q_FEED_DECAY:0.15,
+  Q_RETINUE_R:26,
+  EGG_CROP:0.05,          // crop she spends per egg
+  DIAPAUSE_T:14,          // below this she stops laying entirely
+
+  // --- Kipyatkov's sand-glass ----------------------------------------------
+  // L. niger is endogenous-heterodynamic: after spring reactivation the colony
+  // runs a FIXED developmental period and then enters dormancy on its own
+  // schedule, even under warm temperatures and long days. Temperature only
+  // modifies the timing. So dormancy is not something cold causes and warmth
+  // avoids — you cannot skip it, you can only spend it warm.
+  // Reactivation is the part that needs cold: chilling refills the glass.
+  GLASS_LEN:195,          // active days before dormancy arrives regardless
+  GLASS_LARVA_AT:0.76,    // larvae commit to diapause before she stops laying
+  // A diapausing larva is not free. Overwintering insect larvae metabolise
+  // slowly rather than not at all, so a cohort nobody ever wakes must
+  // eventually starve instead of persisting. FREE PARAMETER: at 0.004/day a
+  // normal 170-day winter costs 0.68 hunger (well under the 1.0 that blocks
+  // development), while a larva left in permanent diapause dies in ~4 years.
+  LARVA_WINTER_DRAIN:0.004,
+  CHILL_NEED:55,          // roughly the 8-10 weeks keepers find necessary
+  WAKE_T:12,              // chilling alone is not enough; spring warmth ends it
+  // Termination is a temperature-dependent RATE, not a gate. Measured in
+  // Pieris: a unimodal curve — fastest at low-single-digit temperatures,
+  // declining continuously as it warms, low but nonzero when warm, and
+  // reduced again in extreme cold. The 1-6 C optimum and the ~55-day
+  // requirement match the measured 1-10 C / 50-60 day chilling optimum.
+  // The warm tail is the one number no study pins down for an ant; it is a
+  // declared free parameter, swept rather than defended.
+  CHILL_OPT_LO:1, CHILL_OPT_HI:6,
+  CHILL_DECAY_K:5,        // e-folding of the decline above the optimum
+  CHILL_WARM_FLOOR:0.10,  // FREE PARAMETER: termination rate when fully warm
+
+  // --- season ---------------------------------------------------------------
+  // A sinusoid over the year. It also solves the ramping problem for free: near
+  // the equinoxes it moves ~0.17 C/day, inside the 0.2-2 C/day guidance, so no
+  // separate ramp mechanism is needed.
+  // PEAK is the sim-day of the warmest point. Negative because day 0 is the
+  // founding, which follows a nuptial flight just after midsummer — so the
+  // peak is already ~25 days behind her and the year runs downhill into her
+  // first winter, with the founding brood finishing first.
+  SEASON:{ TMEAN:16, TAMP:9, PEAK:-25 },   // 7C midwinter, 25C midsummer
+
+  // Temperature scales rates through one channel: how fast an ant does anything.
+  // Rathery et al. found ants dig FASTER when warm purely because they move
+  // faster, and that nest shape is unchanged — digging is not a seasonal
+  // behaviour, it is locomotion running at a different speed. So nothing below
+  // is a winter switch; they all read the same scalar.
+  // (Measured 15-30 C in L. flavus. Winter here is 7 C, so the low end is an
+  // extrapolation beyond the data.)
+  THERM_LO:0.25, THERM_REF:25,
+
+  // --- overwintering --------------------------------------------------------
+  // Fat is personal and does not pass in trophallaxis; crop is the social
+  // stomach and does. Surplus crop is banked as fat and drawn back only when
+  // an ant is otherwise empty. This is the autumn reserve a colony seals the
+  // nest with, and it is what carries workers through months without foraging.
+  // Banking starts well below a full crop and runs fastest as things cool:
+  // the reserve has to be laid down in autumn, because by the time it is cold
+  // enough to need it there is nothing left to forage. FAT_FROM at 0.65 meant
+  // ants almost never had enough surplus to bank any.
+  FAT_MAX:1.6, FAT_GAIN:0.16, FAT_FROM:0.38,
+  DORMANT_T:10,           // below this she will not leave the nest at all
+
+  // --- queen: pheromone (3-MeC31) ------------------------------------------
+  // An honest fertility signal: amount tracks maturity and fecundity. It
+  // suppresses worker ovaries and lowers worker aggression. The catch, which is
+  // what makes it worth modelling, is that the same compound depresses the
+  // queen's own productivity — signalling is not free.
+  Q_QP_INVEST:0.75,       // how hard she signals, 0..1
+  Q_QP_COST:0.25,         // fecundity lost at full investment
+  Q_QP_RANGE:150,
+
+  // --- queen: lifespan -----------------------------------------------------
+  // Reproductive senescence is negligible until roughly 70% of lifespan.
+  // Fecundity is therefore flat for years, then falls — not a slow linear decay.
+  // (The famous ~29-year queen traces to an amateur's obituary note whose own
+  // dates don't add up, so treat it as folklore, not a design target.)
+  // Metabolic-days, not calendar days. A seasonal year averages ~0.62x, so
+  // this is scaled to keep ~15 calendar years of real lifespan.
+  Q_LIFE_DAYS:3400,       // ~15 years at the seasonal mean
+  Q_SENESCE_AT:0.70,
+  Q_SPERM:14000,          // fertilised eggs available; then males only
+
+  // --- resources ---
+  PREY_UNIT:1,            // larval meals per prey item carried home
+
+  // --- environment ---------------------------------------------------------
+  // Food manages itself. Aphid colonies establish on nearby plants, build up,
+  // senesce with their host and vanish; new ones appear elsewhere. Prey turns
+  // up at random the way carrion and stray insects actually do.
+  //
+  // The balance is deliberately asymmetric, because the real one is: honeydew
+  // is abundant and carbohydrate is rarely the binding constraint, while
+  // protein arrives in unpredictable lumps. Colony size therefore oscillates
+  // around a protein-set ceiling instead of sitting flat.
+  ENV:{
+    APHID_MIN:3, APHID_MAX:8,        // standing patches, scaled by temperature
+    APHID_LIFE:[90,260],             // days before the host plant gives out
+    APHID_RATE:[7,17],               // honeydew/day at peak — species differ
+    APHID_CAP:130,
+    PREY_GAP:[1.5,4.0],              // days between arrivals at 25C
+    PREY_MAX:9,                      // standing items; the ground is not paved
+    // Compensated twice over. Butchering into three raised not the supply but
+    // the fraction of it that reaches a larva — transport, not prey, was the
+    // binding constraint, so easing it needed carcasses trimmed again to keep
+    // the colony off its ceiling.
+    PREY_UNITS:[9,26],               // carries per carcass; x3 meals each
+    PREY_ROT:40,                     // a carcass persists a while
+    R_MIN:235, R_MAX:330             // spawn distance; beyond the soil disc
+  }
+};
+
+/* ---------------------------------------------------------------- utilities */
+// Deterministic PRNG (mulberry32). The base seed is fixed; each run derives its
+// own from it, so marathon colony 2 differs from colony 1 while every run stays
+// replayable — the seed it started from is written into the log header.
+// reset(s) forces a seed, which is what makes a matched control exact rather
+// than merely comparable. The stream has to be set before buildWorld(), so a
+// probe cannot fix it by assigning after reset() returns.
+const BASE_SEED = 20260828;
+// Run 1 is the base seed unchanged, so the historical default trajectory —
+// everything measured up to and including run 1 of v1.7 — still reproduces.
+const seedFor = r => (BASE_SEED + Math.imul(r-1, 0x9E3779B1))|0;
+let runSeed = seedFor(1);
+let seed = runSeed;
+function rnd(){ seed|=0; seed=seed+0x6D2B79F5|0;
+  let t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t;
+  return ((t^t>>>14)>>>0)/4294967296; }
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+function hash2(a,b){ let h=(a*2654435761 ^ b*40503)>>>0; h^=h>>>13;
+  h=Math.imul(h,0x5bd1e995)>>>0; return (h^h>>>15)>>>0; }
+const TAU=Math.PI*2;
+function angDelta(a,b){ let d=(b-a)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TAU; return d; }
+
+/* ================================================================== WORLD */
+const W=CFG.GW*CFG.CELL, H=CFG.GH*CFG.CELL, N=CFG.GW*CFG.GH;
+const OPEN=0, WALL=1, NEST=2;
+const SOIL=WALL;   // same impassable cell type, but diggable
+
+let terrain, trail, home, tempF, antCount;
+let colony, queen, brood, food, ants, larder;
+let simDay, running=true, speed=1, ambient=22, diapause=false, seasons=true;
+let marathon=true;
+const layers={trail:true, home:true, temp:false};
+
+const gi=(gx,gy)=>gy*CFG.GW+gx;
+function cellAt(x,y){
+  const gx=clamp(x/CFG.CELL|0,0,CFG.GW-1), gy=clamp(y/CFG.CELL|0,0,CFG.GH-1);
+  return gi(gx,gy);
+}
+const NEST_CX=W*0.5, NEST_CY=H*0.52;
+let entranceX, entranceY;
+let nestCells=0, terrainDirty=true;
+
+// The colony starts with the cavity a founding queen digs for herself: one
+// small chamber and a shaft to the surface. Everything else is soil the
+// workers must excavate for themselves.
+function buildWorld(){
+  terrain=new Uint8Array(N); trail=new Float32Array(N);
+  home=new Float32Array(N);  tempF=new Float32Array(N); mound=new Uint8Array(N);
+  const cx=Math.round(NEST_CX/CFG.CELL), cy=Math.round(NEST_CY/CFG.CELL);
+  const R=CFG.SOIL_R;
+  nestCells=0;
+  for(let gy=0;gy<CFG.GH;gy++)for(let gx=0;gx<CFG.GW;gx++){
+    const dx=gx-cx, dy=gy-cy;
+    terrain[gi(gx,gy)] = (dx*dx+dy*dy)<R*R ? SOIL : OPEN;
+  }
+  for(let gy=cy-6;gy<=cy+6;gy++)for(let gx=cx-7;gx<=cx+7;gx++){
+    if(gx<1||gx>=CFG.GW-1||gy<1||gy>=CFG.GH-1) continue;
+    const dx=(gx-cx)/7, dy=(gy-cy)/6;
+    if(dx*dx+dy*dy<1){ terrain[gi(gx,gy)]=NEST; nestCells++; }
+  }
+  for(let gy=cy-R-1;gy<cy-5;gy++)for(let gx=cx-1;gx<=cx+1;gx++){
+    if(gx<1||gx>=CFG.GW-1||gy<1||gy>=CFG.GH-1) continue;
+    if(terrain[gi(gx,gy)]===SOIL){ terrain[gi(gx,gy)]=NEST; nestCells++; }
+  }
+  entranceX=cx*CFG.CELL; entranceY=(cy-R)*CFG.CELL;
+  terrainDirty=true;
+}
+
+// Temperature: warmest along the sun-exposed upper edge, cooling with distance.
+// Soil buffers the nest slightly. Nurses use this field to place brood.
+// Static gradient only. Ambient is added at read time, so a changing season
+// costs nothing — the alternative was rewriting 17,920 cells every sim-day.
+function refreshTemp(){
+  for(let gy=0;gy<CFG.GH;gy++){
+    const grad=6*(1-gy/CFG.GH);
+    for(let gx=0;gx<CFG.GW;gx++) tempF[gi(gx,gy)]=grad;
+  }
+}
+function tempAt(x,y){
+  const i=cellAt(x,y);
+  return ambient + tempF[i] + (terrain[i]===NEST?-0.8:0);
+}
+// How fast an ant does anything, relative to high summer.
+let thermNow=1;
+function therm(){
+  return clamp(CFG.THERM_LO+(1-CFG.THERM_LO)*(ambient-10)/(CFG.THERM_REF-10),
+               CFG.THERM_LO, 1.25);
+}
+
+/* ================================================================ COLONY */
+/* ------------------------------------------------------------- run logger
+   Every long run records itself: a sample row every 10 sim-days, an event
+   line for each dormancy transition and death, and a summary on run end.
+   When a run ends (queen dead and colony extinct, or queen dead if MARATHON_
+   STRICT) the log downloads itself as a .tsv and a fresh run starts, so a
+   machine left overnight accumulates one file per colony lifetime. */
+let runId=1, runLog=[], runEvents=[], lastSample=-1e9;
+let logC={emerged:0,died:0,digs:0,fills:0,meals:0,laid:0,bDied:0,bEaten:0};
+const LOG_COLS=["day","amb","therm","pop","out","cells","cPerAnt","eggs","larvae",
+  "stalled","pupae","larderU","cropSum","fatMean","qAge","qGlass","qChill",
+  "qDormant","qRate","emerged","died","digs","fills","meals",
+  // Added v1.8. Without laid/bDied/bEaten the recruitment budget cannot be
+  // closed: run 1 logged 3,140 emerged against ~5,900 eggs implied by qRate,
+  // with the missing ~2,800 brood unaccounted for anywhere in the file.
+  "diap","laid","bDied","bEaten"];
+function logSample(){
+  lastSample=simDay;
+  let out=0,f=0,n=0,crop=0;
+  for(let i=0;i<CFG.MAX_ANTS;i++) if(ants.alive[i]){
+    n++; f+=ants.fat[i]; crop+=ants.crop[i];
+    if(ants.st[i]>=2&&ants.st[i]<=5) out++;
+  }
+  let eggs=0,larv=0,stall=0,pup=0,diap=0;
+  for(let k=0;k<CFG.MAX_BROOD;k++){
+    if(!brood.alive[k]) continue;
+    const st=brood.stage[k];
+    if(st===0) eggs++;
+    else if(st===1){ larv++; if(brood.hunger[k]>1) stall++; if(brood.diap[k]) diap++; }
+    else pup++;
+  }
+  let lard=0; for(const L of larder) lard+=L.n;
+  runLog.push([simDay.toFixed(1),ambient.toFixed(2),thermNow.toFixed(3),n,out,
+    nestCells,(nestCells/Math.max(1,n)).toFixed(2),eggs,larv,stall,pup,lard,
+    crop.toFixed(1),(n?f/n:0).toFixed(3),queen.age.toFixed(1),
+    queen.glass.toFixed(1),queen.chill.toFixed(1),queen.dormant?1:0,
+    queen.rate.toFixed(2),logC.emerged,logC.died,logC.digs,logC.fills,
+    logC.meals,diap,logC.laid,logC.bDied,logC.bEaten].join("\t"));
+}
+function logEvent(tag){
+  runEvents.push(simDay.toFixed(1)+"\t"+tag);
+}
+function logDownload(reason){
+  const head="# formica run "+runId+"  seed "+runSeed+"  ended: "+reason
+    +"  at day "+simDay.toFixed(1)+"\n"
+    +"# events:\n"+runEvents.map(e=>"# "+e).join("\n")+"\n"
+    +LOG_COLS.join("\t")+"\n";
+  try{
+    const blob=new Blob([head+runLog.join("\n")+"\n"],{type:"text/tab-separated-values"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download="formica-run"+String(runId).padStart(3,"0")+"-"
+      +reason.replace(/\W+/g,"_")+"-day"+simDay.toFixed(0)+".tsv";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  }catch(e){ /* headless: no DOM download, log stays in memory */ }
+}
+function endRun(reason){
+  logSample(); logEvent("RUN END: "+reason);
+  logDownload(reason);
+  runId++; runLog=[]; runEvents=[]; lastSample=-1e9;
+  logC={emerged:0,died:0,digs:0,fills:0,meals:0,laid:0,bDied:0,bEaten:0};
+  reset();
+}
+function reset(forceSeed){
+  runSeed = (forceSeed===undefined) ? seedFor(runId) : (forceSeed|0);
+  seed = runSeed;
+  buildWorld(); refreshTemp();
+  ants={ x:new Float32Array(CFG.MAX_ANTS), y:new Float32Array(CFG.MAX_ANTS),
+    a:new Float32Array(CFG.MAX_ANTS),  st:new Uint8Array(CFG.MAX_ANTS),
+    crop:new Float32Array(CFG.MAX_ANTS), load:new Uint8Array(CFG.MAX_ANTS),
+    age:new Float32Array(CFG.MAX_ANTS), life:new Float32Array(CFG.MAX_ANTS),
+    sens:new Float32Array(CFG.MAX_ANTS), conf:new Float32Array(CFG.MAX_ANTS),
+    mx:new Float32Array(CFG.MAX_ANTS), my:new Float32Array(CFG.MAX_ANTS),
+    carry:new Int16Array(CFG.MAX_ANTS), alive:new Uint8Array(CFG.MAX_ANTS),
+    nan:new Uint8Array(CFG.MAX_ANTS),
+    want:new Uint8Array(CFG.MAX_ANTS),    // nutrient this trip is for
+    memT:new Uint8Array(CFG.MAX_ANTS),    // nutrient at the remembered source
+    pd:new Float32Array(CFG.MAX_ANTS),    // protein drive, raised by larval contact
+    hp:new Float32Array(CFG.MAX_ANTS),    // reluctance to leave the nest at all
+    trip:new Float32Array(CFG.MAX_ANTS),  // time spent on the current trip
+    found:new Uint8Array(CFG.MAX_ANTS),   // did this trip actually find food?
+    dg:new Float32Array(CFG.MAX_ANTS),    // refractory period after digging
+    pel:new Uint8Array(CFG.MAX_ANTS),     // hauling an excavated pellet
+    btx:new Float32Array(CFG.MAX_ANTS),   // where she means to put the brood down
+    bty:new Float32Array(CFG.MAX_ANTS),
+    fat:new Float32Array(CFG.MAX_ANTS) };  // personal winter reserve
+  antCount=0;
+  brood={ stage:new Uint8Array(CFG.MAX_BROOD), acc:new Float32Array(CFG.MAX_BROOD),
+    x:new Float32Array(CFG.MAX_BROOD), y:new Float32Array(CFG.MAX_BROOD),
+    held:new Int16Array(CFG.MAX_BROOD), alive:new Uint8Array(CFG.MAX_BROOD),
+    type:new Uint8Array(CFG.MAX_BROOD),     // 0 worker  1 male  2 trophic egg
+    hunger:new Float32Array(CFG.MAX_BROOD),
+    // Diapause is per-item state, not a read of the queen's. glass is the
+    // seasonal phase inherited from the mother at laying; chill is this
+    // larva's own accumulated chilling; diap is whether it is halted.
+    glass:new Float32Array(CFG.MAX_BROOD), chill:new Float32Array(CFG.MAX_BROOD),
+    diap:new Uint8Array(CFG.MAX_BROOD) };
+  larder=[];                                 // prey cached in the nest, spatially
+  colony={ sugar:0, protein:0, larvae:0, broodN:0, hungry:0, trophicN:0 };
+  // She has already flown, mated and sealed herself in. Everything from here
+  // comes out of her own body until the first workers open the nest.
+  queen={ x:NEST_CX, y:NEST_CY+16, a:rnd()*TAU,
+    phase:0,              // 0 founding  1 established  2 queenless (dead)
+    fat:CFG.Q_FAT0, muscle:CFG.Q_MUSCLE0, crop:0,
+    lay:0, fed:0, retinue:0, rate:0, qp:0, solicit:0,
+    sperm:CFG.Q_SPERM, age:0, alive:true,
+    // She founds just after midsummer, so her first season is a part-season:
+    // the glass is already most of the way through when she seals herself in.
+    // The glass only advances once she is established (~day 45), so her first
+    // stop falls on day 45 + (GLASS_LEN - this). A LARGER starting value stops
+    // her sooner: 45 short of full puts her first dormancy near day 90, in
+    // autumn, rather than in the middle of her first winter.
+    glass:CFG.GLASS_LEN-45, chill:0, dormant:false };
+  food=[]; simDay=0; preyClock=0;
+  // Cached shortlists and batch phases are simulation state too. Leaving them
+  // set carries one colony into the next, so a forced seed did NOT reproduce a
+  // run until these were cleared — caught by asserting reset(s) twice gives
+  // byte-identical results, which first time round it did not.
+  sortList.length=0; hungryList.length=0; broodC=null;
+  misplacedTick=0; evapTick=0; thermNow=1;
+  logC={emerged:0,died:0,digs:0,fills:0,meals:0,laid:0,bDied:0,bEaten:0};
+  // Start the memory saturated so nothing reads as long-abandoned before the
+  // averages have had time to mean anything.
+  useF.fill(3); dugAt.fill(0);
+  for(let k=0;k<4;k++) spawnAphidPatch(true);
+  // Two of the starting patches sit close in. Founding queens establish where
+  // food is; nobody digs in in the middle of a desert.
+  for(let k=0;k<2;k++) spawnAphidPatch(true,80,170);
+  for(let k=0;k<4;k++) spawnPrey();
+}
+
+function addAnt(x,y,nanitic){ logC.emerged++;
+  if(antCount>=CFG.MAX_ANTS) return -1;
+  let i=-1; for(let k=0;k<CFG.MAX_ANTS;k++) if(!ants.alive[k]){i=k;break;}
+  if(i<0) return -1;
+  ants.x[i]=x; ants.y[i]=y; ants.a[i]=rnd()*TAU; ants.st[i]=0;
+  ants.crop[i]=0; ants.load[i]=0; ants.age[i]=0;
+  ants.life[i]=(nanitic?CFG.EARLY_LIFE:CFG.LATE_LIFE)*(0.7+rnd()*0.6);
+  // the response-threshold distribution that yields scouts / patrollers / recruits
+  ants.sens[i]=CFG.SENS_MIN+rnd()*(CFG.SENS_MAX-CFG.SENS_MIN);
+  ants.conf[i]=0; ants.carry[i]=-1; ants.alive[i]=1; ants.nan[i]=nanitic?1:0;
+  ants.want[i]=0; ants.memT[i]=0; ants.pd[i]=0;
+  // A second response threshold, independent of pheromone sensitivity: how
+  // readily she leaves the nest at all. Drawing it per ant is what keeps a
+  // standing nurse force at home instead of the whole colony emptying out the
+  // moment everyone is hungry. Nobody is assigned to nurse; some just go last.
+  ants.hp[i]=rnd(); ants.trip[i]=0; ants.dg[i]=0; ants.pel[i]=0; ants.found[i]=0;
+  ants.crop[i]=0.70;   // she ecloses provisioned, not empty
+  ants.fat[i]=0.25;
+  antCount++; return i;
+}
+function killAnt(i){ logC.died++;
+  if(ants.carry[i]>=0) brood.held[ants.carry[i]]=-1;
+  ants.alive[i]=0; antCount--;
+}
+// glass is the mother's seasonal phase at the moment of laying. She writes it
+// into the egg once; nothing reads her again afterwards.
+function addBrood(x,y,type,glass){
+  for(let k=0;k<CFG.MAX_BROOD;k++) if(!brood.alive[k]){
+    brood.stage[k]=0; brood.acc[k]=0; brood.x[k]=x; brood.y[k]=y;
+    brood.held[k]=-1; brood.alive[k]=1; brood.type[k]=type||0;
+    brood.hunger[k]=0; brood.glass[k]=glass||0; brood.chill[k]=0; brood.diap[k]=0;
+    // Counts trophic eggs too, so that laid = emerged + bDied + bEaten + alive
+    // closes exactly. It also matches qRate, which does not distinguish them.
+    logC.laid++;
+    return k;
+  }
+  return -1;
+}
+const countBrood=()=>colony.broodN;
+
+/* ==========================================================================
+   WORKER_PROGRAM
+   The single behaviour function every worker runs. There is no per-caste code
+   and no central coordinator. Division of labour comes from three per-ant
+   scalars only: age, pheromone sensitivity, and private route confidence.
+
+   States: 0 in-nest  1 nursing  2 exploring  3 following  4 recalling  5 returning
+========================================================================== */
+function WORKER_PROGRAM(i, dt){
+  const S=ants;
+  const inNest = terrain[cellAt(S.x[i],S.y[i])]===NEST;
+
+  // A trip has a budget. An ant who finds nothing turns for home to be fed and
+  // go out again, rather than searching until she starves in the field. Without
+  // this the whole workforce ends up permanently outside and slowly dies.
+  if(S.st[i]>=2 && S.st[i]<=4){
+    S.trip[i]+=dt;
+    if(S.trip[i]>CFG.TRIP_MAX*CFG.DAY_SECONDS/thermNow){ S.trip[i]=0; S.found[i]=0; S.st[i]=5; }
+  }
+
+  switch(S.st[i]){
+
+  /* --- 0: in the nest ---------------------------------------------------- */
+  case 0: {
+    S.found[i]=0;
+    /* TROPHALLAXIS.
+       She does not "deposit into the colony". She hands food to whoever is
+       beside her, and the amount is set by how much empty crop THEY have.
+       A hungry nestmate takes a lot; a full one takes almost nothing. That
+       single rule is what turns a forager's unloading rate into a readout of
+       colony hunger, without the forager ever learning anything global. */
+    if(S.crop[i]>0.02 && rnd()<CFG.TROPH_RATE*dt){
+      const j=neighbourOf(i);
+      if(j>=0 && ants.crop[j]<S.crop[i]){
+        const room=Math.max(0,CFG.CROP_MAX-ants.crop[j]);
+        const give=Math.min(S.crop[i], room*CFG.TROPH_FRAC);
+        S.crop[i]-=give; ants.crop[j]+=give;
+      }
+    }
+    // The queen is just another recipient and obeys the same receiver rule:
+    // discrete bouts, volume set by the room she has left. She is a large sink,
+    // not an infinite one.
+    // Only a fed ant donates to the queen. Starving workers keeping their
+    // last drops is not selfishness, it is what stops the queen becoming a
+    // sink that drains the whole bootstrap.
+    if(queen.alive && S.crop[i]>CFG.HUNGRY && rnd()<CFG.TROPH_RATE*dt &&
+       dist(S.x[i],S.y[i],queen.x,queen.y)<CFG.Q_RETINUE_R){
+      const room=Math.max(0, CFG.Q_CROP-queen.fed);
+      const give=Math.min(S.crop[i]-CFG.HUNGRY*0.5, room*CFG.TROPH_FRAC);
+      if(give>0){ S.crop[i]-=give; queen.fed+=give; }
+      // An attending ant also picks up whether the queen is begging for prey.
+      if(queen.solicit>0) S.pd[i]=Math.min(2,S.pd[i]+CFG.QSOLICIT_GAIN);
+    }
+    // Prey is cached where she puts it down, next to the brood.
+    if(S.load[i]){ larderDrop(S.x[i],S.y[i]); S.load[i]=0; }
+
+    /* NURSING and the protein signal.
+       A nurse meeting an unfed larva either feeds it from a nearby cache or,
+       finding none, carries away a raised protein drive. Larval hunger reaches
+       the foragers one contact at a time — it is never broadcast. */
+    if(rnd()<dt*3.2 && (S.age[i]<CFG.MATURE_DAYS || rnd()<0.25+0.6*S.hp[i])){
+      const h=findHungryLarva(S.x[i],S.y[i]);
+      if(h>=0){
+        const Li=larderNear(S.x[i],S.y[i],CFG.LARDER_R);
+        if(Li>=0 && larderTake(Li)){
+          brood.hunger[h]=Math.max(0,brood.hunger[h]-CFG.LARVA_MEAL);
+        } else {
+          const Fi=larderNear(S.x[i],S.y[i],CFG.FETCH_R);
+          if(Fi>=0){
+            S.btx[i]=larder[Fi].x; S.bty[i]=larder[Fi].y;
+            S.carry[i]=h;                 // the larva she means to come back to
+            S.trip[i]=0; S.st[i]=8; break;
+          }
+          // Nothing anywhere in range: THAT is what mobilises protein foraging.
+          S.pd[i]=Math.min(2,S.pd[i]+CFG.PDRIVE_GAIN*dt);
+        }
+      }
+      const b=findSortableBrood(S.x[i],S.y[i]);
+      if(b>=0){
+        // Isolated items are picked up readily, settled ones rarely. This is
+        // the inward half of the balance; without it everything diffuses away.
+        const nb=broodNear(brood.x[b],brood.y[b]);
+        const pPick=clamp(1-nb/CFG.BROOD_SETTLED,0.12,1);
+        if(rnd()<pPick){
+          const sg=CFG.BROOD_SIGMA[brood.stage[b]];
+          const d=sg*(0.35+1.3*rnd());
+          let ang=rnd()*TAU;
+          let tx=brood.x[b]+Math.cos(ang)*d, ty=brood.y[b]+Math.sin(ang)*d;
+          // Weak thermal preference, secondary to the sorting itself: if the
+          // mirrored spot sits nearer the brood band, prefer it.
+          const mx2=brood.x[b]-Math.cos(ang)*d, my2=brood.y[b]-Math.sin(ang)*d;
+          const off=(t)=>t<CFG.BROOD_T_LO?CFG.BROOD_T_LO-t:t>CFG.BROOD_T_HI?t-CFG.BROOD_T_HI:0;
+          if(terrain[cellAt(mx2,my2)]===NEST &&
+             off(tempAt(mx2,my2))<off(tempAt(tx,ty))-0.4){ tx=mx2; ty=my2; }
+          if(terrain[cellAt(tx,ty)]!==NEST){ tx=S.x[i]; ty=S.y[i]; }
+          S.btx[i]=tx; S.bty[i]=ty;
+          S.carry[i]=b; brood.held[b]=i; S.trip[i]=0; S.st[i]=1; break;
+        }
+      }
+    }
+
+    /* LEAVING.
+       Two independent local triggers, no colony state consulted:
+         protein — her own accumulated drive from unfed larvae she has touched
+         sugar   — her own crop is light, meaning she managed to unload it,
+                   which only happens when those around her had room. */
+    const eager = (0.10+0.90*(1-S.hp[i]))*clamp((ambient-6)/16,0.05,1.1);
+    if(S.age[i]>=CFG.MATURE_DAYS){
+      if(S.pd[i]>CFG.PDRIVE_TRIGGER && rnd()<dt*1.6*eager){
+        S.want[i]=1; S.pd[i]=0; S.trip[i]=0;
+        const usable=S.conf[i]>CFG.MEM_TRUST && S.memT[i]===1;
+        S.st[i]= usable?4:2;                 // protein trips barely use trails
+        break;
+      }
+      if(S.crop[i]<CFG.EXIT_CROP && rnd()<dt*1.1*eager*(1-S.crop[i]/CFG.EXIT_CROP)){
+        S.want[i]=0; S.trip[i]=0;
+        const usable=S.conf[i]>CFG.MEM_TRUST && S.memT[i]===0;
+        S.st[i]= usable?4:(rnd()<S.sens[i]?3:2);
+        break;
+      }
+    }
+    if(tryDig(i,dt)) break;
+    if(tryFill(i,dt)) break;
+    wander(i,dt,true);
+    break;
+  }
+
+  /* --- 1: carrying a brood item to its drop point ------------------------ */
+  case 1: {
+    const b=S.carry[i];
+    if(b<0||!brood.alive[b]){ S.carry[i]=-1; S.st[i]=0; break; }
+    headTo(i,S.btx[i],S.bty[i],dt); move(i,dt);
+    brood.x[b]=S.x[i]; brood.y[b]=S.y[i];
+    S.trip[i]+=dt;
+    if(dist(S.x[i],S.y[i],S.btx[i],S.bty[i])<4 || S.trip[i]>CFG.BROOD_CARRY_MAX){
+      brood.held[b]=-1; S.carry[i]=-1; S.trip[i]=0; S.st[i]=0;
+    }
+    break;
+  }
+
+  /* --- 2: exploring — weak trail bias, mostly a correlated random walk ---- */
+  case 2: {
+    if(inNest){ headTo(i,entranceX,entranceY,dt); }
+    else {
+      const g=CFG.HOME_GAIN*home[cellAt(S.x[i],S.y[i])];
+      senseTrail(i,dt,S.sens[i]*0.35*(1+g));
+      // A fresh explorer holds a roughly radial outbound heading. A random
+      // walk re-treads its own ground; a straightish ray actually sweeps the
+      // annulus where the food is. Scouts do leave on notably straight paths.
+      if(S.trip[i] < 0.45*CFG.TRIP_MAX*CFG.DAY_SECONDS){
+        const away=Math.atan2(S.y[i]-NEST_CY,S.x[i]-NEST_CX);
+        S.a[i]+=angDelta(S.a[i],away)*Math.min(1,1.1*dt);
+      }
+    }
+    move(i,dt); layHome(i); tryPickup(i);
+    break;
+  }
+
+  /* --- 3: following a trail out of the nest ------------------------------ */
+  case 3: {
+    if(inNest){ headTo(i,entranceX,entranceY,dt); }
+    else {
+      const c=cellAt(S.x[i],S.y[i]);
+      // Home-range marking multiplies responsiveness to the trail itself.
+      const g=CFG.HOME_GAIN*home[c];
+      senseTrail(i,dt,S.sens[i]*(1+g));
+      if(trail[c]<0.02 && rnd()<dt*1.5) S.st[i]=2;   // trail lost -> explore
+    }
+    move(i,dt); layHome(i); tryPickup(i);
+    break;
+  }
+
+  /* --- 4: recalling a private memory (pheromone is ignored here) ---------- */
+  case 4: {
+    if(inNest && dist(S.x[i],S.y[i],S.mx[i],S.my[i])>40){ headTo(i,entranceX,entranceY,dt); }
+    else headTo(i,S.mx[i],S.my[i],dt);
+    move(i,dt); layHome(i);
+    if(!tryPickup(i) && dist(S.x[i],S.y[i],S.mx[i],S.my[i])<7){
+      S.conf[i]*=CFG.MEM_DECAY;                    // source was empty
+      if(S.conf[i]<0.2){ S.conf[i]=0; S.st[i]=2; }
+    }
+    break;
+  }
+
+  /* --- 7: crowded, hunting outward for a face to dig --------------------- */
+  case 7: {
+    const c=digFace(S.x[i],S.y[i]);
+    if(c>=0){
+      terrain[c]=NEST; nestCells++; terrainDirty=true; dugAt[c]=simDay; logC.digs++;
+      S.pel[i]=1; S.dg[i]=1; S.st[i]=6; break;
+    }
+    // Away from the crowd she just left: that is where the soil is.
+    const bc=broodCentroid(), tx=bc?bc.x:queen.x, ty=bc?bc.y:queen.y;
+    S.a[i]+=angDelta(S.a[i],Math.atan2(S.y[i]-ty,S.x[i]-tx))*Math.min(1,1.5*dt)
+           +(rnd()-0.5)*1.8*dt;
+    move(i,dt);
+    S.trip[i]+=dt;
+    if(S.trip[i]>CFG.DIG_PATIENCE){ S.trip[i]=0; S.st[i]=0; }
+    break;
+  }
+
+  /* --- 8: fetching a meal from a cache ----------------------------------- */
+  case 8: {
+    headTo(i,S.btx[i],S.bty[i],dt); move(i,dt);
+    S.trip[i]+=dt;
+    if(dist(S.x[i],S.y[i],S.btx[i],S.bty[i])<6){
+      const Li=larderNear(S.x[i],S.y[i],14);
+      if(Li>=0 && larderTake(Li)){ S.st[i]=9; S.trip[i]=0; }
+      else { S.carry[i]=-1; S.st[i]=0; }     // pile emptied before she arrived
+      break;
+    }
+    if(S.trip[i]>CFG.FETCH_TMAX){ S.carry[i]=-1; S.st[i]=0; }
+    break;
+  }
+
+  /* --- 9: delivering the meal ------------------------------------------- */
+  case 9: {
+    const b=S.carry[i];
+    const ok=b>=0&&brood.alive[b];
+    const tx=ok?brood.x[b]:queen.x, ty=ok?brood.y[b]:queen.y;
+    headTo(i,tx,ty,dt); move(i,dt);
+    S.trip[i]+=dt;
+    if(dist(S.x[i],S.y[i],tx,ty)<8 || S.trip[i]>CFG.FETCH_TMAX){
+      // Feed whoever is hungriest here — her target may already have been fed.
+      const h=findHungryLarva(S.x[i],S.y[i]);
+      if(h>=0) brood.hunger[h]=Math.max(0,brood.hunger[h]-CFG.LARVA_MEAL);
+      else {
+        // Nobody hungry: bank the single meal where she stands.
+        let merged=false;
+        for(const L of larder) if(dist(S.x[i],S.y[i],L.x,L.y)<18){ L.n++; merged=true; break; }
+        if(!merged && larder.length<48) larder.push({x:S.x[i],y:S.y[i],n:1});
+      }
+      S.carry[i]=-1; S.trip[i]=0; S.st[i]=0;
+    }
+    break;
+  }
+
+  /* --- 6: hauling spoil out to the mound --------------------------------- */
+  case 6: {
+    headTo(i,entranceX,entranceY,dt); move(i,dt);
+    if(terrain[cellAt(S.x[i],S.y[i])]===OPEN){
+      mound[cellAt(S.x[i],S.y[i])]=Math.min(6,mound[cellAt(S.x[i],S.y[i])]+1);
+      S.pel[i]=0; S.st[i]=0;
+    }
+    break;
+  }
+
+  /* --- 5: returning with a load ----------------------------------------- */
+  case 5: {
+    headTo(i, inNest?queen.x:entranceX, inNest?queen.y:entranceY, dt);
+    move(i,dt); layHome(i); layTrail(i,dt);
+    if(inNest && dist(S.x[i],S.y[i],queen.x,queen.y)<34) S.st[i]=0;
+    // Note she does not empty herself on arrival — she carries her load into
+    // the nest and sheds it in pieces, to whoever has room.
+    break;
+  }}
+}
+
+/* ------------------------------------------------------------ excavation */
+// Prefer the adjacent soil cell with the FEWEST excavated neighbours. Widening
+// a cavity is cheap and self-limiting; extending a face is what turns one
+// chamber into branched galleries — the shape transition the digging
+// literature describes.
+function digFace(x,y){
+  const gx=clamp((x/CFG.CELL)|0,0,CFG.GW-1), gy=clamp((y/CFG.CELL)|0,0,CFG.GH-1);
+  if(terrain[gi(gx,gy)]!==NEST) return -1;
+  let best=-1,bestN=99;
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+    if(!dx&&!dy) continue;
+    const nx=gx+dx, ny=gy+dy;
+    if(nx<1||nx>=CFG.GW-1||ny<1||ny>=CFG.GH-1) continue;
+    const c=gi(nx,ny);
+    if(terrain[c]!==SOIL) continue;
+    let openN=0;
+    for(let ey=-1;ey<=1;ey++)for(let ex=-1;ex<=1;ex++)
+      if(terrain[gi(nx+ex,ny+ey)]===NEST) openN++;
+    if(openN<bestN){ bestN=openN; best=c; }
+  }
+  return best;
+}
+// Motivation only. An ant crowded where she stands does not dig the wall next
+// to her — usually there isn't one, because the crowd is in the middle of the
+// nest. She sets off to FIND a face. Without this the frontier is unreachable
+// and the nest stops growing at a few hundred cells however many ants arrive.
+// A cell may be filled only if it is topologically "simple": its excavated
+// neighbours form exactly ONE connected run around the 3x3 ring. Removing such
+// a cell provably cannot sever the nest, seal the entrance, or punch a void in
+// the middle of a chamber — it can only erode a boundary inward.
+// The first version demanded a dead-end tip with at most one neighbour, which
+// is provably safe but so rare in a real excavation that it fired five times in
+// eleven hundred days. This is the same guarantee without the false negatives.
+// Walk the 8-ring in order and count runs of excavated cells. Exactly one run
+// means the cell sits on a single boundary: safe to remove. Zero runs means it
+// is fully enclosed, more than one means it bridges separate parts.
+const RING=[[-1,-1],[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0]];
+function isSimplePoint(gx,gy){
+  let v=0;
+  for(let k=0;k<8;k++)
+    if(terrain[gi(gx+RING[k][0],gy+RING[k][1])]===NEST) v|=(1<<k);
+  let runs=0;
+  for(let k=0;k<8;k++){
+    const cur=(v>>k)&1, prev=(v>>((k+7)%8))&1;
+    if(cur && !prev) runs++;
+  }
+  return runs===1;
+}
+function fillTip(x,y){
+  const gx=clamp((x/CFG.CELL)|0,0,CFG.GW-1), gy=clamp((y/CFG.CELL)|0,0,CFG.GH-1);
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+    if(!dx&&!dy) continue;
+    const nx=gx+dx, ny=gy+dy;
+    if(nx<1||nx>=CFG.GW-1||ny<1||ny>=CFG.GH-1) continue;
+    const c=gi(nx,ny);
+    if(terrain[c]!==NEST) continue;
+    if(!isSimplePoint(nx,ny)) continue;         // would change the topology
+    // Fresh work is committed work. Every earlier scheme leaked here: a cell
+    // is always momentarily unused in the weeks after it is dug, because the
+    // colony has not yet grown into it — so the slow signal condemned the
+    // frontier faster than the frontier could earn its keep. A long refractory
+    // means only space that has had a full season to prove itself, and failed,
+    // is ever taken back.
+    if(simDay-dugAt[c] < CFG.CELL_COMMIT) continue;
+    const px=nx*CFG.CELL+CFG.CELL/2, py=ny*CFG.CELL+CFG.CELL/2;
+    if(broodNear(px,py)>0) continue;            // never bury brood
+    if(larderNear(px,py,14)>=0) continue;       // nor the cache
+    if(dist(px,py,queen.x,queen.y)<18) continue;
+    if(dist(px,py,entranceX,entranceY)<26) continue;
+    if(localAnts(px,py)>0) continue;            // nor a nestmate
+    return c;
+  }
+  return -1;
+}
+function tryFill(i,dt){
+  const S=ants;
+  if(S.pel[i] || S.dg[i]>0.5 || nestCells<=CFG.NEST_MIN) return false;
+  if(tempAt(S.x[i],S.y[i])<CFG.REMODEL_T) return false;   // winter lull
+  if(rnd() > CFG.FILL_RATE*dt) return false;
+  const drive=clamp((CFG.FILL_USE-useNear(S.x[i],S.y[i]))/CFG.FILL_SPAN,0,1);
+  if(drive<=0 || rnd()>drive) return false;
+  const c=fillTip(S.x[i],S.y[i]);
+  if(c<0) return false;
+  // Spoil comes back off the mound she once carried it to.
+  terrain[c]=SOIL; nestCells--; terrainDirty=true; logC.fills++;
+  S.dg[i]=1;
+  return true;
+}
+function tryDig(i,dt){
+  const S=ants;
+  if(S.pel[i] || S.dg[i]>0.5) return false;
+  if(tempAt(S.x[i],S.y[i])<CFG.REMODEL_T) return false;   // winter lull
+  if(rnd() > CFG.DIG_RATE*dt) return false;
+  // Same slow variable as filling, opposite end of it. When dig answered the
+  // moment's crowding and fill answered the weeks-average, they systematically
+  // disagreed: a knot of returning foragers dug cells the average never
+  // ratified, and 40% of everything excavated got walled straight back up.
+  // One signal, wide hysteresis: no cell can be dug and refilled by the same
+  // weather.
+  const drive=clamp((useNear(S.x[i],S.y[i])-CFG.DIG_USE)/CFG.DIG_USE_SPAN,0,1);
+  if(drive<=0 || rnd()>drive) return false;
+  S.st[i]=7; S.trip[i]=0;
+  return true;
+}
+
+/* ------------------------------------------------- worker program helpers */
+function dist(x1,y1,x2,y2){const a=x1-x2,b=y1-y2;return Math.sqrt(a*a+b*b);}
+
+function move(i,dt){
+  const S=ants, sp=CFG.SPEED*dt*thermNow;
+  const nx=S.x[i]+Math.cos(S.a[i])*sp, ny=S.y[i]+Math.sin(S.a[i])*sp;
+  if(nx<2||nx>W-2||ny<2||ny>H-2||terrain[cellAt(nx,ny)]===WALL){
+    S.a[i]+=Math.PI*(0.5+rnd());                    // deflect off soil
+    return;
+  }
+  S.x[i]=nx; S.y[i]=ny;
+}
+function wander(i,dt,confine){
+  const S=ants;
+  S.a[i]+=(rnd()-0.5)*CFG.WANDER*4*dt;
+  if(confine){
+    // Who belongs at the brood pile is a matter of role, not of headcount.
+    // Nurses (the nest-bound end of the threshold distribution) aggregate on
+    // the brood, which keeps the core dense enough for trophallaxis, the
+    // retinue and larval feeding. Off-duty foragers rest where they stand and
+    // drift through the galleries instead — they are what occupies new space,
+    // and their spread is what makes the colony's footprint scale with its
+    // population. Capping density for everyone broke feeding; sending everyone
+    // to the brood ran excavation and backfill as a perpetual motion machine.
+    // Splitting by role is what real colonies do, and it fixes both.
+    if(S.hp[i]>0.5 || S.age[i]<CFG.MATURE_DAYS){
+      const bc=broodCentroid();
+      const tx=bc?bc.x:queen.x, ty=bc?bc.y:queen.y;
+      const d=dist(S.x[i],S.y[i],tx,ty);
+      if(d>16) S.a[i]+=angDelta(S.a[i],Math.atan2(ty-S.y[i],tx-S.x[i]))*dt*1.6;
+    }
+  }
+  move(i,dt);
+}
+function headTo(i,tx,ty,dt){
+  const S=ants, want=Math.atan2(ty-S.y[i],tx-S.x[i]);
+  S.a[i]+=angDelta(S.a[i],want)*Math.min(1,CFG.TURN*dt)+(rnd()-0.5)*0.9*dt;
+}
+// Three-sensor trail sampling. Gain is the ant's own sensitivity, which is
+// what makes some individuals scouts and others committed recruits.
+function senseTrail(i,dt,gain){
+  const S=ants;
+  const read=(a)=>{ const px=S.x[i]+Math.cos(a)*CFG.SENS_D, py=S.y[i]+Math.sin(a)*CFG.SENS_D;
+    return terrain[cellAt(px,py)]===WALL?-1:trail[cellAt(px,py)]; };
+  const l=read(S.a[i]-CFG.SENS_A), c=read(S.a[i]), r=read(S.a[i]+CFG.SENS_A);
+  if(c>=l && c>=r) S.a[i]+=(rnd()-0.5)*CFG.WANDER*dt;
+  else if(l>r)     S.a[i]-=CFG.TURN*gain*dt;
+  else             S.a[i]+=CFG.TURN*gain*dt;
+  S.a[i]+=(rnd()-0.5)*CFG.WANDER*dt*(1.6-gain);
+}
+function layHome(i){
+  const c=cellAt(ants.x[i],ants.y[i]);
+  home[c]=Math.min(CFG.HOME_MAX, home[c]+CFG.HOME_DEP);
+}
+// Deposition rule: strongly boosted near the source, scaled by source quality,
+// suppressed by encounters with nestmates. Never used to correct a bad trail.
+// Carbohydrate is recruited to; protein largely is not. Portha et al. found
+// L. niger funnels onto a single source when offered two identical sugar
+// feeders, but spreads evenly across two identical protein feeders. Suppressing
+// deposition on protein trips is what reproduces that split.
+function layTrail(i,dt){
+  const S=ants, c=cellAt(S.x[i],S.y[i]);
+  if(!S.found[i]) return;                   // fruitless trips advertise nothing
+  if(!S.load[i] && S.crop[i]<0.05) return;
+  const dFood=dist(S.x[i],S.y[i],S.mx[i],S.my[i]);
+  const boost=1+(CFG.TRAIL_FOOD_BOOST-1)*Math.exp(-dFood/CFG.TRAIL_BOOST_RANGE);
+  const crowd=1/(1+CFG.CROWD_K*localAnts(S.x[i],S.y[i]));
+  // Weak — not zero — deposition when hauling prey. Total suppression starved
+  // the colony of carcass locations: nobody could learn where meat was except
+  // by personal luck. A quarter-strength mark keeps protein foraging diffuse,
+  // which is the observed pattern, while still letting a find propagate.
+  const q = S.load[i] ? 0.30 : 0.4+S.crop[i];
+  trail[c]=Math.min(CFG.TRAIL_MAX, trail[c]+CFG.TRAIL_BASE*boost*crowd*q*dt*8);
+}
+// Local density comes from a coarse occupancy grid rebuilt once per tick,
+// so crowding feedback stays O(1) per ant instead of O(n).
+const OCC_CELL=12, OW=Math.ceil(W/OCC_CELL), OH=Math.ceil(H/OCC_CELL);
+let mound=new Uint8Array(N);
+let occ=new Uint16Array(OW*OH);
+// Occupancy remembered over weeks, not read off the moment.
+let useF=new Float32Array(OW*OH);
+let dugAt=new Float32Array(N);   // when each cell was last excavated
+function useNear(x,y){
+  const cx=clamp((x/OCC_CELL)|0,0,OW-1), cy=clamp((y/OCC_CELL)|0,0,OH-1);
+  let n=0;
+  for(let oy=cy-1;oy<=cy+1;oy++){
+    if(oy<0||oy>=OH) continue;
+    for(let ox=cx-1;ox<=cx+1;ox++){ if(ox<0||ox>=OW) continue; n+=useF[oy*OW+ox]; }
+  }
+  return n;
+}
+let cellHead=new Int32Array(OW*OH), nextAnt=new Int32Array(CFG.MAX_ANTS);
+function buildOccupancy(){
+  occ.fill(0); cellHead.fill(-1);
+  for(let k=0;k<CFG.MAX_ANTS;k++){
+    if(!ants.alive[k]) continue;
+    const ox=(ants.x[k]/OCC_CELL)|0, oy=(ants.y[k]/OCC_CELL)|0;
+    if(ox<0||ox>=OW||oy<0||oy>=OH) continue;
+    const c=oy*OW+ox;
+    occ[c]++; nextAnt[k]=cellHead[c]; cellHead[c]=k;
+  }
+}
+// The emptiest nestmate within reach. Searching the 3x3 cell neighbourhood
+// matters: in a sparse young colony two ants almost never occupy the same
+// cell, and a forager who can never find a receiver can never unload.
+function neighbourOf(i){
+  const cx=clamp((ants.x[i]/OCC_CELL)|0,0,OW-1), cy=clamp((ants.y[i]/OCC_CELL)|0,0,OH-1);
+  let best=-1, bestCrop=1e9;
+  for(let oy=cy-1;oy<=cy+1;oy++){
+    if(oy<0||oy>=OH) continue;
+    for(let ox=cx-1;ox<=cx+1;ox++){
+      if(ox<0||ox>=OW) continue;
+      for(let k=cellHead[oy*OW+ox]; k!==-1; k=nextAnt[k]){
+        if(k===i) continue;
+        if(ants.crop[k]<bestCrop){ bestCrop=ants.crop[k]; best=k; }
+      }
+    }
+  }
+  return best;
+}
+// Crowding over the 3x3 cell neighbourhood — what an ant actually feels.
+function localDensity(x,y){
+  const cx=clamp((x/OCC_CELL)|0,0,OW-1), cy=clamp((y/OCC_CELL)|0,0,OH-1);
+  let n=0;
+  for(let oy=cy-1;oy<=cy+1;oy++){
+    if(oy<0||oy>=OH) continue;
+    for(let ox=cx-1;ox<=cx+1;ox++){ if(ox<0||ox>=OW) continue; n+=occ[oy*OW+ox]; }
+  }
+  return n;
+}
+function localAnts(x,y){
+  const ox=clamp((x/OCC_CELL)|0,0,OW-1), oy=clamp((y/OCC_CELL)|0,0,OH-1);
+  return Math.max(0, occ[oy*OW+ox]-1);
+}
+function tryPickup(i){
+  const S=ants;
+  for(let fi=0;fi<food.length;fi++){
+    const f=food[fi];
+    if(f.amount<=0) continue;
+    if(dist(S.x[i],S.y[i],f.x,f.y)>f.r) continue;
+    const t = f.type==="sugar" ? 0 : 1;
+    // At the source the decision turns on the food type and her own state only.
+    // Nearly every ant will take sugar; a good fraction walk past protein.
+    // The walk-past coin is hashed per (ant, patch): re-rolling it every tick
+    // while she straddles the patch would quietly turn 45% into 100%.
+    if(t===1 && S.want[i]===0 && (hash2(i,fi)&255)>115) continue;
+    if(t===0 && S.want[i]===1 && S.crop[i]>CFG.HUNGRY) continue;
+    S.mx[i]=f.x; S.my[i]=f.y; S.memT[i]=t; S.conf[i]=1; S.found[i]=1;
+    if(t===0){
+      // Critical-volume rule: fill to capacity, then head home.
+      const take=Math.min(CFG.CROP_MAX-S.crop[i], f.amount);
+      if(take<=0.01) continue;
+      f.amount-=take; S.crop[i]+=take;
+    } else { f.amount-=1; S.load[i]=1; }
+    S.st[i]=5; return true;
+  }
+  return false;
+}
+// Nurses draw from a shortlist of thermally misplaced brood, rebuilt every
+// few ticks rather than rescanned by every nurse on every tick.
+let misplacedTick=0;
+// Coarse brood-density grid. An ant needs to know only how crowded the spot
+// around one item is, so this is rebuilt on the same cadence as the other
+// shortlists rather than counted per ant.
+const BCELL=16, BW=Math.ceil(W/BCELL), BH=Math.ceil(H/BCELL);
+let broodOcc=new Uint16Array(BW*BH);
+function refreshBroodOcc(){
+  broodOcc.fill(0);
+  for(let k=0;k<CFG.MAX_BROOD;k++){
+    if(!brood.alive[k]||brood.held[k]>=0) continue;
+    const bx=(brood.x[k]/BCELL)|0, by=(brood.y[k]/BCELL)|0;
+    if(bx>=0&&bx<BW&&by>=0&&by<BH) broodOcc[by*BW+bx]++;
+  }
+}
+function broodNear(x,y){
+  const bx=clamp((x/BCELL)|0,0,BW-1), by=clamp((y/BCELL)|0,0,BH-1);
+  return broodOcc[by*BW+bx];
+}
+// Nearest handleable item. Everything is handleable — sorting is continuous,
+// not a one-off tidy-up.
+function findSortableBrood(x,y){
+  let best=-1,bd=38;
+  for(let n=0;n<sortList.length;n++){
+    const k=sortList[n];
+    if(!brood.alive[k]||brood.held[k]>=0) continue;
+    const d=dist(x,y,brood.x[k],brood.y[k]);
+    if(d<bd){bd=d;best=k;}
+  }
+  return best;
+}
+let sortList=[];
+function refreshSortable(){
+  sortList.length=0;
+  for(let k=0;k<CFG.MAX_BROOD;k++)
+    if(brood.alive[k]&&brood.held[k]<0) sortList.push(k);
+}
+
+let hungryList=[];
+function refreshHungry(){
+  hungryList.length=0;
+  for(let k=0;k<CFG.MAX_BROOD;k++)
+    if(brood.alive[k] && brood.stage[k]===1 && brood.hunger[k]>0.80) hungryList.push(k);
+}
+function findHungryLarva(x,y){
+  // Within reach, prefer the most developed hungry larva. Under scarcity this
+  // concentrates investment so that SOME larvae finish, instead of rationing
+  // every meal across the whole pile and finishing none. Colonies really do
+  // triage brood this way; the alternative starves everyone equally.
+  let best=-1,bacc=-1;
+  for(let n=0;n<hungryList.length;n++){
+    const k=hungryList[n];
+    // Feed only larvae genuinely running down. A meal cannot push hunger below
+    // zero, so topping up a larva at 0.3 throws most of the meal away. This one
+    // threshold was silently halving the colony's protein efficiency.
+    if(!brood.alive[k]||brood.hunger[k]<=0.85) continue;
+    if(dist(x,y,brood.x[k],brood.y[k])>44) continue;
+    if(brood.acc[k]>bacc){bacc=brood.acc[k];best=k;}
+  }
+  return best;
+}
+
+/* ------------------------------------------------------------- the larder */
+// Prey is cached where it is dropped, near the brood. Nobody knows the total;
+// an ant only knows whether there is a pile within reach of her.
+function larderDrop(x,y){
+  const add=CFG.LARDER_PER_CARRY;
+  for(const L of larder) if(dist(x,y,L.x,L.y)<18){ L.n+=add; return; }
+  if(larder.length<48) larder.push({x,y,n:add});
+  else larder[0].n+=add;
+}
+function larderNear(x,y,r){
+  for(let i=0;i<larder.length;i++)
+    if(dist(x,y,larder[i].x,larder[i].y)<r) return i;
+  return -1;
+}
+let _ltCount=(f=>f)(0);
+function larderTake(i){
+  const L=larder[i]; if(!L||L.n<=0) return false;
+  L.n--; if(L.n<=0) larder.splice(i,1);
+  logC.meals++;
+  return true;
+}
+
+/* ==========================================================================
+   QUEEN_PROGRAM  —  separate from workers, as specified.
+   Fecundity is not a constant: it is gated by protein, by nurse support, and
+   by temperature. Below the diapause threshold she stops entirely.
+========================================================================== */
+/* Diapause termination rate as a function of temperature. Module scope: the
+   queen and every diapausing larva terminate on ONE curve. Two copies on
+   different curves is the tScale mistake and it is not to be repeated. */
+function termRate(T){
+  if(T<CFG.CHILL_OPT_LO) return 0.6;                    // extreme cold: slowed
+  if(T<=CFG.CHILL_OPT_HI) return 1;                     // the chilling optimum
+  return Math.max(CFG.CHILL_WARM_FLOOR,
+                  Math.exp(-(T-CFG.CHILL_OPT_HI)/CFG.CHILL_DECAY_K));
+}
+function QUEEN_PROGRAM(dtDay, dt){
+  if(!queen.alive) return;
+  queen.age += dtDay*thermNow;
+  if(queen.age > CFG.Q_LIFE_DAYS){
+    queen.alive=false; queen.phase=2; queen.qp=0; queen.rate=0; return;
+  }
+
+  /* --- movement: she stays with the brood, drifting slowly ---------------- */
+  const bc=broodCentroid();
+  if(bc) headQueen(bc.x, bc.y, dt); else queen.a+=(rnd()-0.5)*1.2*dt;
+  const nx=queen.x+Math.cos(queen.a)*3.5*dt, ny=queen.y+Math.sin(queen.a)*3.5*dt;
+  if(terrain[cellAt(nx,ny)]===NEST){ queen.x=nx; queen.y=ny; }
+  else queen.a+=Math.PI*(0.5+rnd());
+
+  const t=tempAt(queen.x,queen.y);
+
+  /* --- phase transition: the first worker ends the closed system ---------- */
+  if(queen.phase===0 && antCount>0) queen.phase=1;
+
+  /* ======================================================================
+     PHASE 0 — FOUNDING (claustral)
+     No intake at all. Flight muscle histolyses into the thoracic crop, the
+     crop feeds larvae, the fat body pays for her own metabolism and her eggs.
+     Target: she should arrive at first eclosion having shed ~half her mass.
+  ====================================================================== */
+  if(queen.phase===0){
+    const conv = queen.muscle * CFG.Q_HISTOLYSIS * dtDay;
+    queen.muscle -= conv; queen.crop += conv;
+    queen.fat = Math.max(0, queen.fat - CFG.Q_BASAL*dtDay);
+
+    // A single founding batch, then she waits. Laying more would spend
+    // reserves she cannot replace.
+    if(t>=CFG.DIAPAUSE_T && queen.fat>0.30 && countBrood()<CFG.Q_FOUND_BATCH){
+      queen.rate = 6*clamp((t-CFG.DIAPAUSE_T)/10,0,1.4);
+      queen.lay += queen.rate*dtDay;
+      while(queen.lay>=1 && queen.fat>0.30){
+        queen.lay-=1; queen.fat-=CFG.Q_EGG_FAT; queen.sperm--;
+        // Some of the first clutch are trophic eggs — laid as larval food,
+        // never meant to hatch.
+        addBrood(queen.x+(rnd()-.5)*14, queen.y+(rnd()-.5)*10, rnd()<0.18?2:0,
+                 queen.glass);
+      }
+    } else queen.rate=0;
+
+    // Reserve failure: recycle brood rather than starve. Documented, and
+    // rational — the brood is stored nutrient.
+    if(queen.crop<0.015 && countLarvae()>0) cannibaliseBrood();
+    if(queen.fat<=0.001 && queen.crop<=0.001){ queen.alive=false; queen.phase=2; queen.rate=0; }
+    queen.qp = 0.25;                       // immature signal, weak
+    return;
+  }
+
+  /* ======================================================================
+     PHASE 1 — ESTABLISHED
+     She no longer feeds herself. Fecundity is driven by what the retinue
+     actually delivers, so a foraging collapse propagates to egg output
+     without any explicit rule connecting them.
+  ====================================================================== */
+  queen.fed = Math.max(0, queen.fed - queen.fed*CFG.Q_FEED_DECAY*dtDay);
+
+  /* --- the sand-glass ---------------------------------------------------
+     Runs ahead of the thermometer. She stops in late summer because her
+     internal period has elapsed, not because it got cold — and she restarts
+     only after enough chilling, so a colony held warm sits dormant at full
+     metabolic rate instead of skipping winter. */
+  if(queen.dormant){
+    queen.rate=0; queen.qp*=0.999;
+    queen.chill += dtDay*termRate(ambient);
+    // Both conditions. Chilling arms reactivation; rising spring temperature
+    // triggers it. Chill alone would wake her in the middle of January.
+    if(queen.chill>=CFG.CHILL_NEED && ambient>=CFG.WAKE_T){
+      queen.dormant=false; queen.glass=0; queen.chill=0;
+      logEvent("REACTIVATION at "+ambient.toFixed(1)+"C");
+    }
+    // Eggs that cannot now develop are not wasted; she eats them.
+    if(rnd()<dtDay*0.6) eatLateEgg();
+    return;
+  }
+  queen.glass += dtDay;
+  if(queen.glass>=CFG.GLASS_LEN){
+    queen.dormant=true; queen.rate=0;
+    logEvent("DORMANCY at "+ambient.toFixed(1)+"C");
+    return;
+  }
+  queen.solicit = Math.max(0, queen.solicit - dtDay*1.4);
+  queen.retinue = countRetinue();
+  if(queen.fat < 1) queen.fat = Math.min(1, queen.fat + 0.004*dtDay*(queen.fed>1?1:0));
+
+  if(t < CFG.DIAPAUSE_T){ queen.rate=0; queen.qp*=0.998; return; }  // diapause
+
+  // She reads two things, both purely local to where she sits: how much her
+  // attendants have passed her lately, and whether there is cached prey within
+  // reach. She has no more access to a colony total than any worker does.
+  const nutrition = clamp(queen.fed/CFG.Q_FEED_TARGET, 0, 1);
+  let nearby=0;
+  for(const L of larder) if(dist(queen.x,queen.y,L.x,L.y)<70) nearby+=L.n;
+  // Cached prey within reach is a cue, not a resource she consumes: it tells
+  // her whether the colony can raise what she lays. When it is thin she begs,
+  // and her attendants carry that outward.
+  const supply    = clamp(nearby/4, 0, 1);
+  if(supply<0.4) queen.solicit=1;
+  // The brake that matters: unfed larvae stacked around her. She is standing
+  // in the brood pile; if it is full of begging larvae nobody is managing to
+  // feed, laying more is pure waste. This is what stops the founding-size
+  // workforce being buried under two hundred doomed eggs.
+  // Both signals count: larvae that are visibly starving, and the raw mass of
+  // eggs she has already laid that nothing has hatched from yet. Without the
+  // egg term she can bury the nest in a 200-egg burst before the first larva
+  // ever gets hungry enough to warn her.
+  let stalledNear=0, eggsNear=0;
+  for(let n=0;n<hungryList.length;n++){
+    const k=hungryList[n];
+    if(brood.alive[k] && brood.hunger[k]>1 &&
+       dist(queen.x,queen.y,brood.x[k],brood.y[k])<170) stalledNear++;
+  }
+  for(let k=0;k<CFG.MAX_BROOD;k++){
+    if(!brood.alive[k]||brood.stage[k]!==0||brood.type[k]===2) continue;
+    if(dist(queen.x,queen.y,brood.x[k],brood.y[k])<170) eggsNear++;
+  }
+  // Sharpened. Larval protein demand ran ~3x ahead of delivery, so she was
+  // laying into a permanent backlog: more than half the larvae stalled while
+  // she kept adding eggs that could not be fed. The brake is the local signal
+  // that already existed; it was simply far too slack.
+  const brake = clamp(1 - (stalledNear + 0.30*eggsNear)/14, 0, 1);
+  const thermal   = clamp((t-CFG.DIAPAUSE_T)/10, 0, 1.5);
+  const senesce   = queen.age < CFG.Q_LIFE_DAYS*CFG.Q_SENESCE_AT ? 1
+                  : clamp(1-(queen.age-CFG.Q_LIFE_DAYS*CFG.Q_SENESCE_AT)/
+                            (CFG.Q_LIFE_DAYS*(1-CFG.Q_SENESCE_AT)), 0, 1);
+  const signalCost = 1 - CFG.Q_QP_COST*CFG.Q_QP_INVEST;
+
+  queen.rate = CFG.Q_LAY_MAX * nutrition * supply * brake * thermal * senesce * signalCost;
+  // Honest signal: what she emits tracks what she is actually producing.
+  queen.qp = clamp(queen.rate/CFG.Q_LAY_MAX, 0, 1) * CFG.Q_QP_INVEST;
+
+  queen.lay += queen.rate*dtDay;
+  while(queen.lay>=1){
+    queen.lay-=1;
+    // An egg is cheap and comes out of her own crop, which the attendants
+    // keep filled. She does NOT eat from the larder — that cache belongs to
+    // the larvae, and letting her draw on it starves the brood behind her.
+    if(queen.fed<CFG.EGG_CROP){ queen.lay=0; break; }
+    queen.fed-=CFG.EGG_CROP;
+    // Sperm is finite and was banked on one flight. When it runs out she can
+    // still lay, but only unfertilised — male — eggs.
+    const type = queen.sperm>0 ? 0 : 1;
+    if(type===0) queen.sperm--;
+    addBrood(queen.x+(rnd()-.5)*16, queen.y+(rnd()-.5)*12, type, queen.glass);
+  }
+}
+
+/* ------------------------------------------------------- queen helpers */
+function headQueen(tx,ty,dt){
+  const want=Math.atan2(ty-queen.y,tx-queen.x);
+  queen.a+=angDelta(queen.a,want)*Math.min(1,1.2*dt)+(rnd()-0.5)*1.4*dt;
+}
+let broodC=null;
+function refreshBroodCentroid(){
+  let sx=0,sy=0,n=0;
+  for(let k=0;k<CFG.MAX_BROOD;k++) if(brood.alive[k]){sx+=brood.x[k];sy+=brood.y[k];n++;}
+  broodC = n?{x:sx/n,y:sy/n}:null;
+}
+function broodCentroid(){ return broodC; }
+const countLarvae=()=>colony.larvae;
+function countRetinue(){
+  const r=Math.ceil(CFG.Q_RETINUE_R/OCC_CELL);
+  const cx=(queen.x/OCC_CELL)|0, cy=(queen.y/OCC_CELL)|0;
+  let n=0;
+  for(let oy=cy-r;oy<=cy+r;oy++){
+    if(oy<0||oy>=OH) continue;
+    for(let ox=cx-r;ox<=cx+r;ox++){
+      if(ox<0||ox>=OW) continue;
+      n+=occ[oy*OW+ox];
+    }
+  }
+  return n;
+}
+// Eat the cheapest available brood: trophic eggs first, then ordinary eggs,
+// and only then a larva.
+// Larvae commit to diapause before the queen stops laying — larval diapause is
+// induced at higher temperatures than her reproductive diapause, so they are
+// already halted when autumn arrives, whatever the thermometer says.
+//
+// This used to read queen.dormant and queen.glass directly, which is a global
+// read and was also a latent bug: QUEEN_PROGRAM returns early once she is
+// dead, freezing her glass above the larval threshold, so orphaned larvae
+// were halted forever. Run 1 left 15 larvae alive and unchanging for 6,853
+// days, and because countBrood() could never reach zero the marathon never
+// terminated either.
+//
+// Induction stays endogenous rather than thermal. A local temperature
+// threshold cannot serve: the halt temperature (~23.8C under the default
+// season) is crossed on BOTH limbs of the year, so a thermal gate would
+// arrest the spring cohort as readily as the autumn one. Instead the phase
+// is inherited from the mother at laying — maternal induction of diapause is
+// well attested in insects [C] — and the larva runs its own clock after that.
+function larvaHalted(k){ return brood.diap[k]===1; }
+function eatLateEgg(){
+  for(let k=0;k<CFG.MAX_BROOD;k++){
+    if(!brood.alive[k]||brood.stage[k]!==0||brood.type[k]===2) continue;
+    if(dist(queen.x,queen.y,brood.x[k],brood.y[k])>90) continue;
+    brood.alive[k]=0; logC.bEaten++; queen.fed+=0.02; return;
+  }
+}
+function cannibaliseBrood(){
+  let pick=-1, best=9;
+  for(let k=0;k<CFG.MAX_BROOD;k++){
+    if(!brood.alive[k]) continue;
+    const cost = brood.type[k]===2 ? 0 : brood.stage[k]===0 ? 1 : 2;
+    if(cost<best){best=cost;pick=k;}
+  }
+  if(pick<0) return;
+  brood.alive[pick]=0; logC.bEaten++;
+  queen.crop += CFG.Q_CANNIB*(best===2?2.2:1);
+}
+
+/* ============================================== BROOD — degree-day model */
+function stepBrood(dtDay){
+  let nB=0,nL=0,nT=0;
+  for(let k=0;k<CFG.MAX_BROOD;k++){
+    if(!brood.alive[k]) continue;
+    nB++; if(brood.stage[k]===1) nL++; if(brood.type[k]===2) nT++;
+    if(brood.type[k]===2) continue;             // trophic eggs never develop
+    const st=brood.stage[k], t=tempAt(brood.x[k],brood.y[k]);
+    const eff=Math.max(0, t-CFG.LTT[st]);       // degree-days above threshold
+    // Its own seasonal clock, seeded by its mother and advanced only while it
+    // is running. Eggs and pupae carry it too, so a larva picks up where its
+    // egg left off rather than restarting at the moult.
+    if(!brood.diap[k]) brood.glass[k]+=dtDay;
+
+    let starved=false;
+    if(st===1){
+      if(queen.phase===0){
+        // While she is sealed in, larval food comes out of her thoracic crop.
+        const need=CFG.Q_LARVA_CROP*dtDay;
+        if(queen.crop>=need) queen.crop-=need;
+        else if(!eatTrophicEgg()) starved=true;
+      } else {
+        // Enter on its own inherited clock; leave on its own chilling. Both
+        // conditions, exactly as for the queen: chilling arms termination and
+        // local warmth fires it. Chill alone would wake it in January. The
+        // larva depends on nothing but its own state and the weather, so one
+        // orphaned mid-winter still gets a spring.
+        if(brood.diap[k]){
+          // Chilling is read from the weather, not from the spot the larva is
+          // lying in, and the same goes for the spring trigger. Nurses hold
+          // brood in the BROOD_T_LO..HI band, so a larva sits ~4C ABOVE ambient
+          // and in high summer termRate() pins to CHILL_WARM_FLOOR: on local
+          // temperature a cohort took 573 days and two winters to reach 48 of
+          // the 55 chill it needed. Measured, not assumed — see CHANGELOG v1.8.
+          // The larva owns its clock; the weather is shared, and the queen
+          // reads it exactly this way.
+          brood.chill[k]+=dtDay*termRate(ambient);
+          if(brood.chill[k]>=CFG.CHILL_NEED && ambient>=CFG.WAKE_T){
+            brood.diap[k]=0; brood.chill[k]=0; brood.glass[k]=0;
+          }
+        } else if(brood.glass[k] > CFG.GLASS_LEN*CFG.GLASS_LARVA_AT){
+          brood.diap[k]=1;
+        }
+        if(larvaHalted(k)){
+          // Overwintering: development stops and feeding all but stops. Not
+          // free, though — it draws slowly on its own reserves, so a cohort
+          // nobody wakes starves in the end rather than persisting forever.
+          brood.hunger[k]+=CFG.LARVA_WINTER_DRAIN*dtDay;
+          if(brood.hunger[k]>6.0) starved=true;
+        } else {
+          // Afterwards a larva is fed by nurses, and signals when it is not.
+          // Hunger tracks development, not the calendar. Below the larval
+          // threshold she neither grows nor consumes — this is larval diapause,
+          // and it is what lets a cohort overwinter instead of starving in a
+          // nest where development has correctly stopped.
+          if(eff>0) brood.hunger[k]+=CFG.LARVA_HUNGER*dtDay*thermNow;
+          if(brood.hunger[k]>3.0 && eatTrophicEgg()) brood.hunger[k]=0.5;
+          // A hungry larva stalls; it does not die on a two-day clock. Ant larvae
+          // tolerate long lean spells, which is exactly why protein scarcity shows
+          // up as a colony that stops growing rather than one that collapses.
+          if(brood.hunger[k]>6.0) starved=true;
+        }
+      }
+      if(starved){ if(rnd()<dtDay*0.10){ brood.alive[k]=0; logC.bDied++; } continue; }
+      if(larvaHalted(k)) continue;        // diapausing: no development
+      if(brood.hunger[k]>1.0) continue;   // unfed larvae stop developing
+    }
+
+    brood.acc[k]+=eff*dtDay;
+    if(brood.acc[k]>=CFG.SET[st]){
+      brood.acc[k]=0;
+      if(st<2){ brood.stage[k]=st+1; continue; }
+      brood.alive[k]=0;
+      if(brood.type[k]===1) continue;           // males do not join the workforce
+      // Cohort lifespan. Note this runs opposite to hobby lore: workers reared
+      // early in colony establishment are measured at ~430 days life expectancy
+      // versus ~310 for later cohorts. Nanitics are small, not short-lived.
+      addAnt(brood.x[k],brood.y[k], antCount<18);
+    }
+  }
+  colony.broodN=nB; colony.larvae=nL; colony.trophicN=nT;
+}
+function eatTrophicEgg(){
+  if(!colony.trophicN) return false;
+  for(let k=0;k<CFG.MAX_BROOD;k++)
+    if(brood.alive[k] && brood.type[k]===2){ brood.alive[k]=0; logC.bEaten++; return true; }
+  return false;
+}
+
+/* ==================================================================== LOOP */
+// Evaporation is a pure multiply, so decaying once every EVAP_EVERY ticks by
+// the compounded factor is equivalent for everything already on the ground.
+// Deposits made mid-batch take the full step when it fires, which slightly
+// over-decays the freshest marks — at 0.999^4 that is a rounding error, and it
+// removes three full 17,920-cell passes out of every four.
+let evapTick=0;
+function stepFields(){
+  if((evapTick=(evapTick+1)%CFG.EVAP_EVERY)!==0) return;
+  const te=Math.pow(CFG.TRAIL_EVAP,CFG.EVAP_EVERY), he=Math.pow(CFG.HOME_EVAP,CFG.EVAP_EVERY);
+  for(let i=0;i<N;i++){ trail[i]*=te; home[i]*=he; }
+}
+function step(dt){
+  const dtDay=dt/CFG.DAY_SECONDS;
+  simDay+=dtDay;
+  if(seasons){
+    const S=CFG.SEASON;
+    ambient = S.TMEAN + S.TAMP*Math.cos(2*Math.PI*(simDay-S.PEAK)/365);
+  }
+  thermNow=therm();
+  if(simDay-lastSample>=10) logSample();
+  if(marathon){
+    if(!queen.alive && antCount===0 && countBrood()===0) endRun("colony extinct");
+    else if(!queen.alive && queen.phase===2 && !queen.deathLogged){
+      queen.deathLogged=true; logEvent("QUEEN DIED (senescence)");
+    }
+  }
+  buildOccupancy();
+  // The abandonment memory integrates only in the active season. A gallery
+  // standing empty in January is wintering, not abandoned — without this gate
+  // the whole nest reads dead by spring, gets walled off in the first warm
+  // week, and is immediately re-dug by the waking colony.
+  if(ambient>=CFG.REMODEL_T){
+    const uk=Math.min(1, dtDay/CFG.USE_TAU);
+    for(let c=0;c<OW*OH;c++) useF[c]+=(occ[c]-useF[c])*uk;
+  }
+  if((misplacedTick=(misplacedTick+1)%15)===0){
+    refreshSortable(); refreshBroodOcc(); refreshHungry(); refreshBroodCentroid();
+  }
+  let cropSum=0, hungrySum=0;
+  for(let i=0;i<CFG.MAX_ANTS;i++){
+    if(!ants.alive[i]) continue;
+    // Ageing runs on metabolism, not the calendar. Diapausing insects live
+    // several times longer through metabolic suppression, so a worker at 0.25x
+    // barely ages through a winter — which is what makes an "overwintering
+    // adult" a real thing rather than a worker that quietly times out in
+    // February. It is also what makes a warm winter expensive: dormant at full
+    // metabolic rate, she ages at full speed while producing nothing.
+    ants.age[i]+=dtDay*thermNow;
+    if(ants.age[i]>ants.life[i]){ killAnt(i); continue; }
+    // Each ant burns her own crop. Starvation is individual, not a colony bar
+    // reaching zero.
+    const burn=CFG.METAB*thermNow*dtDay;
+    ants.crop[i]=Math.max(0, ants.crop[i]-burn);
+    // Bank surplus as fat while there is a surplus. Cooling is the cue: the
+    // colder it gets the harder she banks, because the reserve has to be laid
+    // down in autumn — by the time it is needed there is nothing to forage.
+    if(ants.crop[i]>CFG.FAT_FROM && ants.fat[i]<CFG.FAT_MAX){
+      const urge=CFG.FAT_GAIN*(0.35+1.3*(1-thermNow));
+      const put=Math.min(ants.crop[i]-CFG.FAT_FROM,
+                Math.min(CFG.FAT_MAX-ants.fat[i], urge*dtDay));
+      ants.crop[i]-=put; ants.fat[i]+=put;
+    }
+    // Live off it once the social stomach is empty.
+    else if(ants.crop[i]<=0.02 && ants.fat[i]>0){
+      const take=Math.min(ants.fat[i], burn*2);
+      ants.fat[i]-=take; ants.crop[i]+=take;
+    }
+    ants.pd[i]=Math.max(0, ants.pd[i]-CFG.PDRIVE_DECAY*dtDay);
+    ants.dg[i]=Math.max(0, ants.dg[i]-CFG.DIG_REFRACT*dtDay);
+    if(ants.crop[i]<=0 && ants.fat[i]<=0 && rnd()<dtDay*0.020*thermNow){ killAnt(i); continue; }
+    WORKER_PROGRAM(i,dt);
+    cropSum+=ants.crop[i]; if(ants.crop[i]<CFG.HUNGRY) hungrySum++;
+  }
+  QUEEN_PROGRAM(dtDay,dt);
+  stepBrood(dtDay);
+  stepFields();
+  stepEnvironment(dtDay);
+  // Derived readouts only. Nothing in the model reads these back.
+  colony.sugar=cropSum;
+  colony.hungry=hungrySum;
+  let pn=0; for(const L of larder) pn+=L.n;
+  colony.protein=pn;
+}
+
+/* ================================================================ RENDER */
+const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+const off=document.createElement("canvas"); off.width=CFG.GW; off.height=CFG.GH;
+const octx=off.getContext("2d"), img=octx.createImageData(CFG.GW,CFG.GH);
+const terrCv=document.createElement("canvas"); terrCv.width=W; terrCv.height=H;
+
+function paintTerrain(){
+  const c=terrCv.getContext("2d");
+  c.fillStyle="#1B1510"; c.fillRect(0,0,W,H);
+  for(let gy=0;gy<CFG.GH;gy++)for(let gx=0;gx<CFG.GW;gx++){
+    const t=terrain[gi(gx,gy)]; if(t===OPEN) continue;
+    c.fillStyle = t===SOIL ? "#0E0B08" : "#33271B";
+    c.fillRect(gx*CFG.CELL,gy*CFG.CELL,CFG.CELL,CFG.CELL);
+  }
+  // spoil heaped around the mouth
+  for(let i=0;i<N;i++){
+    if(!mound[i]) continue;
+    const gx=i%CFG.GW, gy=(i/CFG.GW)|0;
+    c.fillStyle="rgba(90,72,52,"+Math.min(0.85,0.16*mound[i])+")";
+    c.fillRect(gx*CFG.CELL,gy*CFG.CELL,CFG.CELL,CFG.CELL);
+  }
+}
+function draw(){
+  if(terrainDirty){ paintTerrain(); terrainDirty=false; }
+  ctx.drawImage(terrCv,0,0);
+
+  // scalar fields as a single composited layer
+  const d=img.data;
+  for(let i=0;i<N;i++){
+    const tr=layers.trail?Math.min(1,trail[i]/3.2):0;
+    const hm=layers.home ?Math.min(1,home[i]/1.6)*0.42:0;
+    const tp=layers.temp ?clamp((tempF[i]+ambient-14)/16,0,1)*0.34:0;
+    const o=i*4;
+    d[o  ]=233*tr + 168*tp;
+    d[o+1]=169*tr + 143*hm +  84*tp;
+    d[o+2]= 60*tr + 134*hm +  58*tp;
+    d[o+3]=Math.min(255,(tr*235+hm*150+tp*160));
+  }
+  octx.putImageData(img,0,0);
+  ctx.drawImage(off,0,0,W,H);
+
+  // food. Aphid colonies swell and fade with the vigour of their host plant;
+  // prey are single hard points that simply run out.
+  for(const f of food){
+    if(f.type==="sugar"){
+      const v=clamp(f.vigour,0,1), fill=clamp(f.amount/f.cap,0,1);
+      ctx.fillStyle="#6FB36A";
+      ctx.globalAlpha=0.10+0.16*v;
+      ctx.beginPath(); ctx.arc(f.x,f.y,f.r*(0.6+0.9*v),0,TAU); ctx.fill();
+      ctx.globalAlpha=0.30+0.60*fill;
+      ctx.beginPath(); ctx.arc(f.x,f.y,2.2+3.4*v*fill,0,TAU); ctx.fill();
+    } else {
+      ctx.fillStyle="#A8543A";
+      ctx.globalAlpha=0.35+0.65*clamp(f.amount/f.cap,0,1);
+      ctx.beginPath(); ctx.arc(f.x,f.y,3.4,0,TAU); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  }
+
+  // brood — chalk white, darkening through the stages; trophic eggs are dimmer
+  const bc=["#F0E9DC","#DCCBA8","#B8996B"];
+  for(let k=0;k<CFG.MAX_BROOD;k++){
+    if(!brood.alive[k]) continue;
+    ctx.fillStyle = brood.type[k]===2 ? "#6E6355"
+                  : brood.type[k]===1 ? "#8FA8C4" : bc[brood.stage[k]];
+    ctx.fillRect(brood.x[k]-1.2,brood.y[k]-1.2,2.4,2.4);
+  }
+
+  // workers
+  for(let i=0;i<CFG.MAX_ANTS;i++){
+    if(!ants.alive[i]) continue;
+    ctx.fillStyle = ants.load[i]||ants.crop[i]>0 ? "#E9A93C"
+                  : ants.nan[i] ? "#9B8F7C" : "#DCD3C2";
+    const s=ants.nan[i]?1.7:2.1;
+    ctx.fillRect(ants.x[i]-s/2,ants.y[i]-s/2,s,s);
+  }
+
+  // queen — halo radius reads her pheromone output, body size reads her mass
+  if(queen.alive){
+    if(queen.qp>0.02){
+      ctx.strokeStyle="#E9A93C"; ctx.globalAlpha=0.10+0.22*queen.qp; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(queen.x,queen.y,CFG.Q_QP_RANGE*0.16*queen.qp+8,0,TAU);
+      ctx.stroke(); ctx.globalAlpha=1;
+    }
+    const m=queenMass(), r=2.6+2.6*m;
+    ctx.strokeStyle=queen.phase===0?"#C98A4B":"#E9A93C"; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.arc(queen.x,queen.y,r,0,TAU); ctx.stroke();
+    ctx.fillStyle="#E9A93C"; ctx.fillRect(queen.x-1.7,queen.y-1.7,3.4,3.4);
+  } else {
+    ctx.strokeStyle="#6E6355"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(queen.x,queen.y,4,0,TAU); ctx.stroke();
+  }
+}
+
+/* =============================================================== UI WIRING */
+const el=id=>document.getElementById(id);
+// Body mass as a fraction of her mass at sealing. A successful founding queen
+// arrives at first eclosion having spent roughly half of herself.
+function queenMass(){ return 0.45 + 0.35*queen.fat + 0.20*queen.muscle; }
+
+function stats(){
+  let e=0,l=0,p=0,out=0;
+  for(let k=0;k<CFG.MAX_BROOD;k++) if(brood.alive[k])
+    (brood.stage[k]===0?e++:brood.stage[k]===1?l++:p++);
+  for(let i=0;i<CFG.MAX_ANTS;i++)
+    if(ants.alive[i]&&ants.st[i]>=2&&ants.st[i]<=5) out++;   // field states only
+  el("s-day").textContent=simDay.toFixed(0);
+  el("s-work").textContent=antCount;
+  el("s-egg").textContent=e; el("s-lar").textContent=l; el("s-pup").textContent=p;
+  el("s-sug").textContent=colony.sugar.toFixed(0);
+  el("s-pro").textContent=colony.protein.toFixed(0);
+  el("s-out").textContent=out;
+  el("s-hun").textContent=colony.hungry;
+  let ap=0,pr=0; for(const f of food) f.type==="sugar"?ap++:pr++;
+  el("s-aph").textContent=ap; el("s-prey").textContent=pr;
+  el("s-nest").textContent=nestCells;
+  el("s-cpa").textContent=(nestCells/Math.max(1,antCount)).toFixed(1);
+  el("s-rate").textContent=daysPerSec.toFixed(daysPerSec<10?1:0);
+
+  el("q-phase").textContent = !queen.alive ? "dead"
+    : queen.dormant ? "dormant"
+    : queen.phase===0 ? "founding" : tempAt(queen.x,queen.y)<CFG.DIAPAUSE_T
+    ? "diapause" : queen.age>CFG.Q_LIFE_DAYS*CFG.Q_SENESCE_AT ? "senescent" : "laying";
+  el("q-mass").textContent=(queenMass()*100).toFixed(0)+"%";
+  el("q-fat").textContent=(queen.fat*100).toFixed(0)+"%";
+  el("q-crop").textContent=(queen.crop*100).toFixed(0);
+  el("q-rate").textContent=queen.rate.toFixed(1);
+  el("q-ret").textContent=queen.retinue;
+  el("q-qp").textContent=queen.qp.toFixed(2);
+  el("q-sperm").textContent=Math.max(0,queen.sperm|0);
+}
+/* ============================================== AUTONOMOUS ENVIRONMENT */
+const lerp=(a,b,t)=>a+(b-a)*t;
+const pick=(r)=>lerp(r[0],r[1],rnd());
+
+// Somewhere on open ground, far enough out that finding it is work.
+function spawnSite(rmin,rmax){
+  for(let tries=0;tries<60;tries++){
+    const ang=rnd()*TAU, rad=pick([rmin??CFG.ENV.R_MIN, rmax??CFG.ENV.R_MAX]);
+    const x=NEST_CX+Math.cos(ang)*rad, y=NEST_CY+Math.sin(ang)*rad;
+    if(x<14||x>W-14||y<14||y>H-14) continue;
+    if(terrain[cellAt(x,y)]!==OPEN) continue;
+    return {x,y};
+  }
+  return null;
+}
+function spawnAphidPatch(seeded,rmin,rmax){
+  const p=spawnSite(rmin,rmax); if(!p) return;
+  const life=pick(CFG.ENV.APHID_LIFE);
+  food.push({ x:p.x, y:p.y, type:"sugar", r:20,
+    amount:seeded?30:0, cap:CFG.ENV.APHID_CAP,
+    rate:pick(CFG.ENV.APHID_RATE), age:seeded?life*rnd()*0.5:0, life, vigour:0 });
+}
+function spawnPrey(){
+  const p=spawnSite(); if(!p) return;
+  const n=Math.round(pick(CFG.ENV.PREY_UNITS));
+  food.push({ x:p.x, y:p.y, type:"protein", r:11, amount:n, cap:n, age:0,
+    life:CFG.ENV.PREY_ROT, rate:0, vigour:1 });
+}
+
+let preyClock=0;
+function stepEnvironment(dtDay){
+  const warmth=clamp((ambient-10)/16,0,1);
+
+  for(let i=food.length-1;i>=0;i--){
+    const f=food[i];
+    f.age+=dtDay;
+    if(f.type==="sugar"){
+      // Build-up, plateau, senescence — the arc of an aphid colony on a plant.
+      const t=f.age/f.life;
+      f.vigour = t<0.18 ? t/0.18 : t>0.72 ? clamp((1-t)/0.28,0,1) : 1;
+      f.amount=Math.min(f.cap, f.amount + f.rate*f.vigour*(0.35+0.65*warmth)*dtDay);
+      if(f.age>f.life){ food.splice(i,1); continue; }
+    } else {
+      if(f.age>f.life || f.amount<=0){ food.splice(i,1); continue; }
+    }
+  }
+
+  // Keep the standing crop of aphid colonies near its temperature-set target.
+  const target=Math.round(lerp(CFG.ENV.APHID_MIN,CFG.ENV.APHID_MAX,warmth));
+  let n=0; for(const f of food) if(f.type==="sugar") n++;
+  if(n<target && rnd()<dtDay*0.5) spawnAphidPatch(false);
+
+  // Prey arrives on its own clock, faster when it is warm.
+  let np=0; for(const f of food) if(f.type==="protein") np++;
+  preyClock-=dtDay*(0.3+1.4*warmth);
+  if(preyClock<=0){ if(np<CFG.ENV.PREY_MAX) spawnPrey(); preyClock=pick(CFG.ENV.PREY_GAP); }
+}
+el("b-play").onclick=e=>{ running=!running;
+  e.target.textContent=running?"Pause":"Play"; e.target.setAttribute("aria-pressed",running); };
+el("b-reset").onclick=()=>{ endRun("manual reset"); paintTerrain(); };
+document.querySelectorAll(".spd").forEach(b=>b.onclick=()=>{
+  speed=+b.dataset.s; insane=false;
+  el("b-insane").setAttribute("aria-pressed",false);
+  document.querySelectorAll(".spd").forEach(o=>o.setAttribute("aria-pressed",o===b));});
+el("b-marathon").onclick=e=>{
+  marathon=!marathon; e.target.setAttribute("aria-pressed",marathon); };
+el("b-savelog").onclick=()=>{ logSample(); logDownload("manual save"); };
+el("b-insane").onclick=e=>{
+  insane=!insane; e.target.setAttribute("aria-pressed",insane);
+  if(insane) document.querySelectorAll(".spd").forEach(o=>o.setAttribute("aria-pressed",false));
+  else { speed=1; document.querySelector('.spd[data-s="1"]').setAttribute("aria-pressed",true); }};
+document.querySelectorAll(".lyr").forEach(b=>b.onclick=()=>{
+  layers[b.dataset.l]=!layers[b.dataset.l];
+  b.setAttribute("aria-pressed",layers[b.dataset.l]);});
+el("r-temp").oninput=e=>{ if(seasons) return; ambient=+e.target.value;
+  el("v-temp").textContent=ambient.toFixed(1)+"\u00B0C"; refreshTemp(); syncSeason(); };
+el("b-seasons").onclick=e=>{
+  seasons=!seasons; e.target.setAttribute("aria-pressed",seasons);
+  if(!seasons){ ambient=22; el("r-temp").value=22; }
+  el("v-temp").textContent=ambient.toFixed(1)+"\u00B0C"; syncSeason(); };
+el("b-season").onclick=()=>{
+  diapause=!diapause; ambient=diapause?8:22;
+  el("r-temp").value=ambient; el("v-temp").textContent=ambient.toFixed(1)+"\u00B0C";
+  refreshTemp(); syncSeason(); };
+function syncSeason(){
+  diapause = ambient<CFG.DIAPAUSE_T;
+  el("b-season").textContent = diapause ? "End diapause" : "Enter diapause";
+}
+
+/* ---------------------------------------------------------------- main loop */
+reset(); paintTerrain();
+
+let last=performance.now(), acc=0, statTick=0;
+let insane=false, tickAcc=0, tickClock=0, daysPerSec=0;
+function frame(now){
+  const raw=Math.min(0.05,(now-last)/1000); last=now;
+  let ticks=0;
+  if(running){
+    if(insane){
+      // No fixed multiplier. Simulate until the frame's time budget is spent,
+      // so the rate is set by whatever the machine can actually do. Leaves
+      // ~5ms of a 16ms frame for rendering and input.
+      const t0=performance.now();
+      do { step(1/60); ticks++; } while(performance.now()-t0 < CFG.INSANE_MS);
+      acc=0;
+    } else {
+      acc+=raw*speed;
+      let guard=0;
+      while(acc>1/60 && guard++<CFG.MAX_SUBSTEPS){ step(1/60); acc-=1/60; ticks++; }
+      if(acc>1) acc=0;
+    }
+  }
+  // achieved rate, averaged over half a second
+  tickAcc+=ticks; tickClock+=raw;
+  if(tickClock>=0.5){ daysPerSec=(tickAcc/60)/CFG.DAY_SECONDS/tickClock;
+    tickAcc=0; tickClock=0; }
+  draw();
+  if((statTick=(statTick+1)%12)===0) stats();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
