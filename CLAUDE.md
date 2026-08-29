@@ -45,6 +45,18 @@ replays. Use a forced seed for every matched control.
 
 Probes are throwaway; `.gitignore` covers `*.out`, `*.log`, `*.tsv`.
 
+**Run logs save themselves (v1.8b).** A download is not a save: the old path
+fired an anchor click and cleared `runLog` on the next line, so a blocked
+download lost the run silently. Now four tiers — an in-memory mirror written
+synchronously before anything can fail, IndexedDB, a granted folder, then a
+download as last resort. For an unattended night, grant the folder: the
+`saving:` readout in the control strip names the live tier, and *session only*
+means a reload will cost you the pile.
+
+`summarise-runs.py` triages a pile of logs into one line per run plus detail
+only where a flag trips. The flags encode failures this project has shipped, so
+a flag means go and look. Run it before reading any raw TSV.
+
 **Non-negotiables, each learned the hard way:**
 
 1. **Assert every patch.** A `str_replace`/regex that silently misses produces
@@ -79,7 +91,7 @@ parameters in source and swept, not defended.
 - Keep legacy builds as named controls, relabelled so nobody mistakes them for
   current.
 
-## Current state (v1.8a)
+## Current state (v1.8b)
 
 Emergent and measured: local trophallactic nutrition; brood annuli (egg 34.8 <
 pupa 65.9 < larva 70.3, ~19k observations; control shows all ~5.5).

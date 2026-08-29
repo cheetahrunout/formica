@@ -67,7 +67,7 @@ footer b{color:var(--bone);font-weight:600}
 <div class="wrap">
 <header>
   <h1>Formica</h1>
-  <span class="sub">Lasius niger &middot; agent-based colony &middot; v1.8a</span>
+  <span class="sub">Lasius niger &middot; agent-based colony &middot; v1.8b</span>
 </header>
 
 <div class="stage">
@@ -113,7 +113,10 @@ footer b{color:var(--bone);font-weight:600}
     <button class="spd" data-s="64" aria-pressed="false">64&times;</button>
     <button id="b-insane" aria-pressed="false">Insane</button>
     <button id="b-marathon" aria-pressed="true" title="On run end: save log, restart automatically">Marathon</button>
-    <button id="b-savelog" title="Download the running log now">Save log</button>
+    <button id="b-savelog" title="Save the running log now">Save log</button>
+    <button id="b-logdir" aria-pressed="false" title="Grant a folder once; every run then saves itself">Save to folder</button>
+    <button id="b-exportlogs" disabled title="Runs held in the page, not yet written to disk">Export held</button>
+    <span class="lab" style="width:auto;margin:0 0 0 4px">saving:&nbsp;<span id="s-logtier">checking</span></span>
     <button id="b-reset">Reset</button>
   </div>
   <div class="row">
@@ -221,6 +224,7 @@ const CFG = {
   TRAIL_EVAP:0.9990,      // per motion tick; must outlast a round trip
   EVAP_EVERY:4,           // ticks between field decay passes
   MAX_SUBSTEPS:400,       // per frame; the old value of 40 capped speed at 16x
+  AUTOSAVE_EVERY:20,      // log samples between crash checkpoints (~200 sim-days)
   INSANE_MS:11,           // ms of each frame handed to the simulation
   TRAIL_MAX:9,
   // Deposition drops when foragers meet nestmates (crowding feedback).
@@ -621,20 +625,236 @@ function logSample(){
 function logEvent(tag){
   runEvents.push(simDay.toFixed(1)+"\t"+tag);
 }
-function logDownload(reason){
-  const head="# formica run "+runId+"  seed "+runSeed+"  ended: "+reason
+/* ====================================================== LOG PERSISTENCE
+   A download is not a save. endRun() used to fire one and clear runLog on the
+   very next line, so if the download did not land the run was gone with no
+   error: Chromium blocks repeated automatic downloads from one origin, which
+   is exactly what marathon mode does, and "ask where to save" turns an
+   unattended night into a queue of dialogs nobody answers.
+
+   Three tiers, strongest first. IndexedDB is the guarantee - it needs no
+   permission, survives a reload or a crashed tab, and is written BEFORE the
+   in-memory log is cleared. A directory handle, if the operator grants one
+   once, additionally writes each run straight to disk unattended. The
+   download is now only the last resort. */
+const LOG_DB="formica-logs", LOG_STORE="runs", LOG_META="meta";
+let logDB=null, logDir=null, logHeld=0, logLastErr="", idbDead=false;
+// Tier 0. IndexedDB can be refused outright - an opaque origin (a data:
+// URL, some sandboxes) throws SecurityError on open, and Firefox blocks it
+// on file:// - so the store cannot be the floor. This array always holds
+// every completed run of the session, whatever else fails, so a blocked
+// download can never be the reason a colony is lost. It does not survive a
+// reload; that is what the tiers above it are for.
+const heldMem=[];
+function memPut(rec){
+  const i=heldMem.findIndex(r=>r.key===rec.key);
+  if(i>=0) heldMem[i]=rec; else heldMem.push(rec);
+}
+function memDrop(key){
+  const i=heldMem.findIndex(r=>r.key===key);
+  if(i>=0) heldMem.splice(i,1);
+}
+
+function idb(){
+  if(logDB) return Promise.resolve(logDB);
+  if(idbDead) return Promise.reject(new Error(logLastErr||"indexedDB unavailable"));
+  return new Promise((res,rej)=>{
+    if(typeof indexedDB==="undefined"){
+      idbDead=true; logLastErr="no indexedDB in this context";
+      return rej(new Error(logLastErr));
+    }
+    const rq=indexedDB.open(LOG_DB,1);
+    rq.onupgradeneeded=()=>{
+      const db=rq.result;
+      if(!db.objectStoreNames.contains(LOG_STORE))
+        db.createObjectStore(LOG_STORE,{keyPath:"key"});
+      if(!db.objectStoreNames.contains(LOG_META))
+        db.createObjectStore(LOG_META);
+    };
+    rq.onsuccess=()=>{ logDB=rq.result; res(logDB); };
+    rq.onerror=()=>{ idbDead=true; logLastErr=String(rq.error); rej(rq.error); };
+  }).catch(e=>{ idbDead=true; logLastErr=String((e&&e.name)||e); throw e; });
+}
+function idbDo(store,mode,fn){
+  return idb().then(db=>new Promise((res,rej)=>{
+    const tx=db.transaction(store,mode), rq=fn(tx.objectStore(store));
+    tx.oncomplete=()=>res(rq&&rq.result);
+    tx.onerror=()=>rej(tx.error); tx.onabort=()=>rej(tx.error);
+  }));
+}
+function countHeld(){
+  return idbDo(LOG_STORE,"readonly",st=>st.count())
+    .then(n=>{ logHeld=Math.max(n||0,heldMem.length); return logHeld; })
+    .catch(()=>{ logHeld=heldMem.length; return logHeld; });
+}
+
+// Build the file exactly as it is written to disk. Synchronous on purpose:
+// the caller clears runLog immediately afterwards.
+function logText(reason){
+  return "# formica run "+runId+"  seed "+runSeed+"  ended: "+reason
     +"  at day "+simDay.toFixed(1)+"\n"
     +"# events:\n"+runEvents.map(e=>"# "+e).join("\n")+"\n"
-    +LOG_COLS.join("\t")+"\n";
+    +LOG_COLS.join("\t")+"\n"+runLog.join("\n")+"\n";
+}
+function logName(reason){
+  return "formica-run"+String(runId).padStart(3,"0")+"-"
+    +reason.replace(/\W+/g,"_")+"-day"+simDay.toFixed(0)+".tsv";
+}
+// Deliberately carries no day: every checkpoint overwrites the same file,
+// so an overnight run leaves one in-progress file rather than one per
+// interval. Completing the run deletes it.
+function partialName(){
+  return "formica-run"+String(runId).padStart(3,"0")+"-partial.tsv";
+}
+function browserDownload(name,text){
   try{
-    const blob=new Blob([head+runLog.join("\n")+"\n"],{type:"text/tab-separated-values"});
+    const blob=new Blob([text],{type:"text/tab-separated-values"});
     const a=document.createElement("a");
-    a.href=URL.createObjectURL(blob);
-    a.download="formica-run"+String(runId).padStart(3,"0")+"-"
-      +reason.replace(/\W+/g,"_")+"-day"+simDay.toFixed(0)+".tsv";
+    a.href=URL.createObjectURL(blob); a.download=name;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  }catch(e){ /* headless: no DOM download, log stays in memory */ }
+    return true;
+  }catch(e){ logLastErr=String(e); return false; }
+}
+// Write straight to a granted folder. Unattended and silent; this is what a
+// machine left running overnight actually needs.
+function writeToDir(name,text){
+  if(!logDir) return Promise.resolve(false);
+  return logDir.getFileHandle(name,{create:true})
+    .then(fh=>fh.createWritable())
+    .then(w=>w.write(text).then(()=>w.close()))
+    .then(()=>true)
+    .catch(e=>{ logLastErr=String(e); return false; });
+}
+// Durable first, convenient second. The stored copy is never dropped on the
+// strength of a download having been *started* - only a confirmed disk write
+// or an explicit export releases it.
+function persistRun(reason){
+  const name=logName(reason), text=logText(reason);
+  const key=name+"#"+runId+"#"+Math.round(simDay*10);
+  const rec={key:key, name:name, run:runId, seed:runSeed, day:simDay,
+             reason:reason, bytes:text.length, text:text};
+  memPut(rec); memDrop("partial#"+runId);   // tier 0, before anything can fail
+  // The completed file supersedes the checkpoint. Leaving the partial on
+  // disk would have every colony counted twice by summarise-runs.py.
+  if(logDir) logDir.removeEntry(partialName()).catch(()=>{});
+  return idbDo(LOG_STORE,"readwrite",st=>st.put(rec))
+    .then(()=>idbDo(LOG_STORE,"readwrite",st=>st.delete("partial#"+runId)))
+    .then(()=>countHeld())
+    .then(()=>writeToDir(name,text))
+    .then(wrote=>{
+      if(wrote){
+        memDrop(key);                        // it is on disk; release it
+        return idbDo(LOG_STORE,"readwrite",st=>st.delete(key))
+          .catch(()=>{}).then(countHeld).then(()=>{ updateLogUI(); return true; });
+      }
+      browserDownload(name,text);      // last resort; the held copy stays put
+      updateLogUI();
+      return false;
+    })
+    .catch(e=>{
+      // The store is unavailable. Tier 0 still has it, so the run is not
+      // lost even if this download is blocked; "Export held" can re-offer it.
+      logLastErr=String((e&&e.name)||e);
+      return writeToDir(name,text).then(wrote=>{
+        if(wrote) memDrop(key); else browserDownload(name,text);
+        countHeld(); updateLogUI(); return wrote;
+      });
+    });
+}
+// Kept for the headless probes, which call it directly.
+function logDownload(reason){ persistRun(reason); }
+
+// Overwrites one row per run, so an interrupted colony survives a crash
+// without filling the store with partial copies.
+function checkpointRun(){
+  try{
+    const text=logText("in progress");
+    const rec={key:"partial#"+runId, name:partialName(), run:runId,
+               seed:runSeed, day:simDay, reason:"in progress",
+               bytes:text.length, text:text};
+    memPut(rec);
+    // Also to the folder when there is one. The point of a checkpoint is to
+    // survive a crash, and after a crash the folder is what you can read
+    // without reopening the page.
+    writeToDir(rec.name, text);
+    idbDo(LOG_STORE,"readwrite",st=>st.put(rec))
+      .then(countHeld).then(updateLogUI).catch(()=>{ countHeld(); updateLogUI(); });
+  }catch(e){ /* headless */ }
+}
+
+function chooseLogDir(){
+  if(!window.showDirectoryPicker){
+    logLastErr="this browser cannot grant folder access; runs are held in the page";
+    updateLogUI(); return;
+  }
+  window.showDirectoryPicker({id:"formica-logs",mode:"readwrite"})
+    .then(d=>{ logDir=d; return idbDo(LOG_META,"readwrite",st=>st.put(d,"dir")); })
+    .then(()=>drainHeld())
+    .then(()=>{ logLastErr=""; updateLogUI(); })
+    .catch(e=>{ logLastErr=String((e&&e.name)||e); updateLogUI(); });
+}
+// Flush everything held in the page to the granted folder, oldest first.
+function drainHeld(){
+  if(!logDir) return Promise.resolve(0);
+  return allHeld().then(all=>{
+    let n=0;
+    return all.reduce((p,r)=>p.then(()=>
+      writeToDir(r.name,r.text).then(ok=>{
+        if(ok){ n++; memDrop(r.key);
+          return idbDo(LOG_STORE,"readwrite",st=>st.delete(r.key)).catch(()=>{}); }
+      })), Promise.resolve()).then(countHeld).then(()=>n);
+  }).catch(()=>0);
+}
+// No folder granted: hand them over as downloads instead, one per run.
+// Union of the store and the in-session mirror, de-duplicated by key.
+function allHeld(){
+  return idbDo(LOG_STORE,"readonly",st=>st.getAll())
+    .catch(()=>[])
+    .then(all=>{
+      const seen=new Map();
+      (all||[]).forEach(r=>seen.set(r.key,r));
+      heldMem.forEach(r=>{ if(!seen.has(r.key)) seen.set(r.key,r); });
+      return [...seen.values()];
+    });
+}
+// Staggered: browsers rate-limit bursts of programmatic downloads, and a
+// dropped one here would be the same silent loss this whole section exists
+// to prevent. Nothing is released from the store until it is confirmed.
+function exportHeld(){
+  allHeld().then(all=>{
+    all.forEach((r,i)=>setTimeout(()=>browserDownload(r.name,r.text),i*600));
+    updateLogUI();
+  }).catch(()=>{});
+}
+// Restore a previously granted folder. Permission may need one click back.
+function restoreLogDir(){
+  idbDo(LOG_META,"readonly",st=>st.get("dir")).then(d=>{
+    if(!d||!d.queryPermission) return;
+    return d.queryPermission({mode:"readwrite"}).then(p=>{
+      if(p==="granted"){ logDir=d; return drainHeld(); }
+    });
+  }).catch(()=>{}).then(()=>{ countHeld().then(updateLogUI); });
+}
+function logTier(){
+  if(logDir) return "folder (unattended)";
+  if(logDB && !idbDead) return "page store, export by hand";
+  return "session only - grant a folder";
+}
+function updateLogUI(){
+  const t=el("s-logtier");
+  if(t){ t.textContent=logTier();
+         t.title=logLastErr?("last error: "+logLastErr):""; }
+  const b=el("b-exportlogs"); if(!b) return;
+  b.textContent = logHeld ? "Export "+logHeld+" held" : "Export held";
+  b.disabled = !logHeld;
+  const d=el("b-logdir");
+  if(d){
+    d.textContent = logDir ? "Folder set" : "Save to folder";
+    d.setAttribute("aria-pressed", logDir?"true":"false");
+    d.title = logDir ? "Runs are written here automatically"
+      : (logLastErr || "Grant a folder once; every run then saves itself");
+  }
 }
 function endRun(reason){
   logSample(); logEvent("RUN END: "+reason);
@@ -1695,7 +1915,13 @@ function step(dt){
     ambient = S.TMEAN + S.TAMP*Math.cos(2*Math.PI*(simDay-S.PEAK)/365);
   }
   thermNow=therm();
-  if(simDay-lastSample>=10) logSample();
+  if(simDay-lastSample>=10){
+    logSample();
+    // A crash mid-colony used to lose everything since the last run end.
+    // The in-progress log is checkpointed under a fixed key, so at most
+    // one checkpoint interval is ever at risk.
+    if(runLog.length && runLog.length%CFG.AUTOSAVE_EVERY===0) checkpointRun();
+  }
   if(marathon){
     if(!queen.alive && antCount===0 && countBrood()===0) endRun("colony extinct");
     else if(!queen.alive && queen.phase===2 && !queen.deathLogged){
@@ -1957,7 +2183,10 @@ document.querySelectorAll(".spd").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".spd").forEach(o=>o.setAttribute("aria-pressed",o===b));});
 el("b-marathon").onclick=e=>{
   marathon=!marathon; e.target.setAttribute("aria-pressed",marathon); };
-el("b-savelog").onclick=()=>{ logSample(); logDownload("manual save"); };
+el("b-savelog").onclick=()=>{ logSample(); persistRun("manual save"); };
+el("b-logdir").onclick=chooseLogDir;
+el("b-exportlogs").onclick=exportHeld;
+restoreLogDir();
 el("b-insane").onclick=e=>{
   insane=!insane; e.target.setAttribute("aria-pressed",insane);
   if(insane) document.querySelectorAll(".spd").forEach(o=>o.setAttribute("aria-pressed",false));

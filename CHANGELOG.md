@@ -10,6 +10,103 @@ several of them were more informative than the fix.
 
 ---
 
+## v1.8b — a download is not a save
+
+Marathon mode wrote one file per colony by synthesising an anchor click, and
+`endRun` cleared `runLog` on the very next line. If the download did not land,
+the run was gone — no error, no trace, no in-memory copy. Three ways that
+happens, all silent:
+
+- Chromium blocks repeated automatic downloads from one origin. The first run
+  saves, then a permission prompt appears; unattended, every later run is
+  dropped. That is exactly marathon mode's access pattern.
+- "Ask where to save each file" turns an overnight run into a queue of dialogs.
+- A crashed or closed tab loses the entire in-progress colony, which for a
+  lifetime run is thousands of sim-days.
+
+The blob URL was revoked after four seconds regardless, and the whole thing sat
+inside a `try/catch` that swallowed the failure and let execution continue to
+the line that wiped the log.
+
+**Four tiers now, strongest first.**
+
+- **In-memory mirror.** `memPut()` runs synchronously inside `persistRun()`
+  before anything that can fail or await. Nothing downstream — a denied store, a
+  blocked download, a missing folder — can lose a completed run within the
+  session. This is the floor and it cannot be refused.
+- **IndexedDB.** Survives reload and tab crash, needs no permission. Written
+  before the in-memory log is cleared.
+- **Directory handle.** If the operator grants a folder once, every run is
+  written straight to disk unattended, with no prompt. This is what a machine
+  left running overnight actually needs. The handle is stored and re-offered on
+  reload; anything held is drained into the folder the moment one is granted.
+- **Download.** Now the last resort, and a started download never releases the
+  stored copy — only a confirmed disk write does.
+
+Also added: `AUTOSAVE_EVERY` (20 samples, ~200 sim-days) checkpoints the
+in-progress run under a fixed key, so a crash mid-colony costs at most one
+interval instead of the whole colony. The completed run supersedes its own
+checkpoint. A `saving:` readout in the control strip names the tier actually in
+force, because a persistence scheme that silently degrades is the bug this entry
+is about.
+
+**Measured, worst case.** IndexedDB denied outright (`SecurityError` — an opaque
+origin refuses `open`) *and* `browserDownload` stubbed to fail:
+
+- a 250-day run survived intact — 25 rows, correct header, `seed 4242`,
+  recoverable through **Export held**;
+- three consecutive marathon `endRun("colony extinct")` calls held all three
+  runs, none lost, before any download was even attempted;
+- the recovered text round-tripped through `summarise-runs.py` and parsed
+  cleanly as run 2, seed 1001, 16 emerged — no false flags;
+- format unchanged: 28 columns, `diap laid bDied bEaten` still last, comment
+  header intact. `logText()` is the original string builder, moved not rewritten.
+
+**Not verified here.** The preview pane this was tested in serves the page from
+a `data:` URL, so IndexedDB is refused and `showDirectoryPicker` could not be
+exercised. On a real `file://` page in Edge or Chrome both should work, and the
+`saving:` readout will say which. If it reads *session only*, the folder grant is
+the one to fix, because that is the tier that makes an unattended night safe.
+
+### v1.8b addendum — the in-progress file
+
+Granting a folder worked first try on `file://` in Chrome, which settles the
+open question above: `showDirectoryPicker` is available and unattended writes
+land. The first checkpoint on disk exposed three faults that only appear once
+the folder tier is actually live:
+
+- **The disk copy went stale.** `checkpointRun()` wrote to memory and the store
+  but not the folder, so after a crash the folder held an old day while the
+  fresh state sat somewhere you need the page open to reach. Checkpoints now
+  write to the folder too — that is the whole point of a checkpoint.
+- **The partial filename carried the day**, so writing every checkpoint to disk
+  would have left one file per interval, dozens over a night. `partialName()`
+  omits the day, so each checkpoint overwrites one file.
+- **A completed run left its partial behind**, which would have had
+  `summarise-runs.py` count every colony twice. Completing a run now deletes the
+  partial file, and the summariser separately refuses to treat an in-progress
+  checkpoint as a colony — it is reported above the table and excluded from every
+  aggregate, since counting it would drag peak population and lifespan down.
+
+## v1.8c — pending, found by summarise-runs.py
+
+The first log written by v1.8a tripped two flags that are real defects, both in
+the marathon exit path, neither yet fixed:
+
+- **`QUEEN DIED` is never logged when it coincides with extinction.** The event
+  is an `else if` after the termination check, so when both fire on the same
+  tick the death is dropped. In `formica-run001-colony_extinct-day5879.tsv`,
+  `qAge` reaches exactly 3400.0 — `Q_LIFE_DAYS`, senescence — and the event list
+  jumps from the last reactivation straight to `RUN END`. The log records that
+  the colony ended but not why.
+- **498 days of post-extinction padding.** The last worker died on day 5381; the
+  run logged 50 more samples of `pop 0` until day 5878.6, because termination
+  also requires `!queen.alive`. v1.8 fixed the `countBrood()===0` clause of this
+  same condition; the queen clause was left, so the claim that the padding bug is
+  fixed is only three-quarters true.
+
+---
+
 ## v1.8 — larval diapause becomes the larva's own state
 
 Prompted by analysing run 1 (`formica-run001-manual_save-day12705.tsv`), a
