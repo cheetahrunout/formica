@@ -1,4 +1,9 @@
 *.out
 *.log
-*.tsv
 node_modules/
+
+# Run logs are tracked: summarise-runs.py is tested against real ones, and
+# the v1.7 and v1.8a files are the fixtures for the 24- and 28-column paths.
+# logs/ is the live output folder the sim writes to overnight - working
+# data, not fixtures, and a night of marathon mode is a lot of files.
+logs/

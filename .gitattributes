@@ -1,0 +1,9 @@
+# Source is LF in the repo and LF on checkout. The patch workflow matches exact
+# file text, so a checkout that rewrote line endings would break edits that had
+# been verified against the working copy.
+* text=auto eol=lf
+
+# Run logs are fixtures: summarise-runs.py is tested against them, so they must
+# come back out of a clone byte-identical to what the simulator wrote. No EOL
+# conversion in either direction.
+*.tsv -text
