@@ -1,0 +1,2 @@
+# Keeps logs/ present in a clone. The simulator writes run logs here; grant
+# this folder in the page (Save to folder) and every colony saves itself.
