@@ -10,6 +10,140 @@ several of them were more informative than the fix.
 
 ---
 
+## v1.9.1 — two projections over one plane
+
+v1.9 drew the whole world side-on, which meant foragers appeared to fly around
+in an air band above the stone. A cross-section and a foraging surface are
+different projections and one drawing cannot serve both.
+
+Both regions are now drawn in the projection that suits them, and the operator
+picks which is on screen. **Nothing in the physics changed to do this.** It is
+still a single 2D grid with a seam through the cap; an ant walking down through
+that seam already moved from one region to the other. Only the drawing and the
+size of the outworld changed, so both regions always run and switching costs
+nothing and misses nothing.
+
+- **Nest view** — side-on, cap down to the bottom of the world, plus 16 rows of
+  ground above the cap so the spoil heap is in frame. Scrolls with depth.
+- **Outworld view** — the foraging region seen from above, 78 rows deep, so
+  distance from the mouth is true ground distance in both axes rather than a
+  strip to walk along.
+
+The outworld grew from 22 rows to 78 and food spawns across the whole plane
+instead of along one line. That has a real cost: the colony starts more slowly,
+because there is much more ground to search. Day 300 gives 18 workers against
+35 in the strip version. It recovers — day 600 is 171 workers with 709 digs, day
+850 is 332 with 1,920 digs — so this is the foraging problem being genuinely
+harder, not a fault.
+
+**The spoil heap, which is the point of keeping sky in the nest view.**
+
+- Haulers aimed at the homing target, which sits *inside* the passage, and the
+  seam itself is `OPEN` — so every ant dropped her pellet the moment she entered
+  the hole and the heap built up inside it. State 6 now aims at a point out on
+  the ground and will not deposit until it is clear of the cap.
+- Then it stopped growing at four cells: everyone aimed at one point, those
+  cells hit the per-cell cap of 6, and that was that. Spoil is now dropped on
+  the least-loaded spot within reach, so it spreads.
+- Measured at day 500: 114 cells, 8 rows tall and 16 wide, sitting above the
+  cap with none left in the seam — and **625 mound units against 625 digs**, so
+  every excavated cell is accounted for on the surface.
+
+**Measured, seed 20260828.** Day 850: 332 workers, 199 brood, queen alive, 2,940
+meals, 1,920 digs, 1,883 nest cells at 5.67 per ant, deepest gallery 0.46m below
+the cap with 188 rows of soil still under it. 25 ants out on the plane, 4 in the
+seam, 303 underground. Integrity unchanged from v1.9: **0 cap cells excavated,
+0 nest cells in the outworld**. Both views render and toggle cleanly, verified
+by sampling composited pixels in each.
+
+**Still not verified here.** The preview pane reports zero stage height, so the
+scrollbar in nest view remains untested; the draw path falls back to rendering
+the whole region and was tested that way.
+
+---
+
+## v1.9 — the world is layered, not a disc
+
+The world was a disc of diggable soil floating in open space, and that disc had
+a rim. A gallery driven near it broke through into open air, and the colony
+ended up living in an open pit rather than a nest — the reported symptom, and
+an artefact of the geometry rather than of any rule.
+
+Replaced with three bands: outworld on top, an impenetrable cap, then soil all
+the way down. A gallery can now only reach open air through the seam in the
+cap, because there is nothing else to break out into.
+
+- `ROCK`, a fourth terrain type. Never diggable, never fillable. `move()` and
+  trail sensing both had to learn it, because `SOIL` and `WALL` are the same
+  constant and everything solid was previously tested as `=== WALL`.
+- `GH` 112 → 260. At ~1cm per cell that is a 2.35m soil column, against the ~2m
+  depth reported for mature *L. niger* nests. The founding chamber sits ~10
+  cells under the cap and the colony digs down from there.
+- The stage scrolls: an 800×1300 canvas in a `max-height` container, so depth is
+  followed with a real scrollbar rather than by shrinking the world to fit.
+- `SOIL_R` is gone. `NEST_MIN` is gone too, replaced by `nestMin` captured from
+  the chamber `buildWorld()` actually cuts — the hard-coded 200 was tied to the
+  old disc, and under the new layout it sat **above** the 142-cell founding
+  nest, which would have blocked backfilling outright until a colony had dug
+  past it.
+
+**Temperature was held fixed on purpose.** The old gradient ramped linearly over
+the whole world, so making the world deeper would have silently warmed the
+brood. It is now an exponential decay from the surface, calibrated so the
+founding chamber sits where it did before: **ambient +2.14 against +2.08**, a
+0.06 °C difference. Seasonal *damping* with depth — real soil flattens the
+annual swing, which would make a deep nest thermally stable — is a genuinely
+interesting mechanism and is deliberately **not** in this change. It feeds
+straight into the sand-glass, and bundling it with a geometry change would make
+any resulting difference impossible to attribute.
+
+**Three bugs, all found by running it rather than reading it.**
+
+1. **The founding cohort starved holding full crops.** Food spawned anywhere in
+   the 110px air column while foragers hug the surface, so they walked
+   underneath every patch: 16 patches out, zero meals taken. Food now spawns on
+   the ground, in the strip just above the stone.
+2. **Every returning forager parked at the mouth and died there.** `entranceY`
+   was set one row *above* the cap, on the sky side. A forager in state 5 heads
+   for it, arrives, is still not `inNest`, has nothing further to steer towards,
+   and stops. The trace is unambiguous: from day 46 all fifteen workers sat in
+   state 5 with y pinned between 99 and 111, against the stone, until they died.
+   The old world hid this because its entrance point was itself a nest cell, so
+   arriving *was* entering. The homing target is now inside the passage.
+3. **Every scout set off due east.** The outbound heading is
+   `atan2(dy, x - entranceX)`, and at the mouth that is `atan2(0, 0)`, which is
+   0. Falls back to whichever way she is already facing.
+
+`ENTRANCE_W` is 4 cells and is a **free parameter**: a pinhole in an 800px wall
+is not findable by a deflecting random walk, so this is a funnel width, not a
+biological claim about seam size.
+
+**Measured, seed 20260828.** At day 860: 538 workers, 203 brood, queen alive,
+4,819 meals, 2,636 digs, 307 fills, 2,481 nest cells at 4.61 per ant, deepest
+gallery 52 cells (0.52m) below the cap with 183 rows of soil still beneath it.
+Integrity, the whole point of the change: **0 cap cells excavated, 0 nest cells
+in the sky band**. 53 ants on the surface against 485 underground. Terrain
+renders as three clean bands, verified by sampling the cached canvas.
+
+**Performance.** ~27–36 sim-days/sec against ~46 before, on a world 2.3× larger.
+Two mitigations carry it: pheromone evaporation stops at the deepest excavated
+row, since fields below a gallery are identically zero and multiplying two
+metres of untouched soil by a decay constant every few ticks is pure waste; and
+the per-frame field composite covers only rows on screen, which was most of the
+render budget once the canvas was 1300px tall. That one has a guard — an
+unsettled layout measures zero viewport height, which would clip the visible
+band to nothing and draw a blank canvas.
+
+**Not verified here.** The preview pane used for testing reports zero client
+height for the stage, so the scrollbar itself could not be exercised; the draw
+path falls back to full-world rendering and was tested that way. Confirm in a
+real browser that the stage scrolls and follows the nest downward.
+
+**Comparability.** Colonies grown in this world are not comparable with the
+v1.8 logs. The existing runs become a separate baseline, not a control.
+
+---
+
 ## v1.8b — a download is not a save
 
 Marathon mode wrote one file per colony by synthesising an anchor click, and

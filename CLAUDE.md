@@ -28,6 +28,18 @@ Single file, `formica.html`. No dependencies, no build step. Open it directly.
   be hoisted to module scope so queen and larvae share one curve.
 - Worker states: 0 nest, 1 brood-carry, 2 explore, 3 follow trail, 4 recall
   memory, 5 return, 6 haul spoil, 7 seek dig face, 8 fetch meal, 9 deliver meal.
+- **The world is three bands (v1.9)**: outworld on top, an impenetrable `ROCK`
+  cap, then soil to the bottom of a 316-row world. The only way through is the
+  seam at `entranceX`. Note `SOIL` and `WALL` are the same constant, so anything
+  testing solidity as `=== WALL` will walk straight through stone — test both.
+  `entranceY` must stay INSIDE the passage: put it on the sky side and homing
+  foragers arrive, are still not `inNest`, and park at the mouth until they die.
+- **One plane, two projections (v1.9.1).** The nest is drawn side-on and the
+  outworld from above; `view` selects which, `viewRows()` gives the row band.
+  Both always simulate — there is only one grid, and the seam is where an ant
+  crosses between regions. Anything aimed at the entrance from below will act
+  inside the seam, which is `OPEN`: that is how spoil ended up heaped in the
+  hole instead of on the surface.
 
 ## Testing
 
@@ -91,7 +103,7 @@ parameters in source and swept, not defended.
 - Keep legacy builds as named controls, relabelled so nobody mistakes them for
   current.
 
-## Current state (v1.8b)
+## Current state (v1.9.1)
 
 Emergent and measured: local trophallactic nutrition; brood annuli (egg 34.8 <
 pupa 65.9 < larva 70.3, ~19k observations; control shows all ~5.5).

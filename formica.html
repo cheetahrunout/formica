@@ -30,6 +30,7 @@ header .sub{color:var(--dim);font-size:11px;letter-spacing:.08em}
 
 /* --- the canvas is the hero --- */
 .stage{position:relative;border:1px solid var(--line);background:#0D0A07;
+  max-height:62vh;overflow-y:auto;
   border-radius:2px;overflow:hidden;line-height:0}
 canvas{width:100%;height:auto;display:block;touch-action:none}
 
@@ -67,11 +68,11 @@ footer b{color:var(--bone);font-weight:600}
 <div class="wrap">
 <header>
   <h1>Formica</h1>
-  <span class="sub">Lasius niger &middot; agent-based colony &middot; v1.8b</span>
+  <span class="sub">Lasius niger &middot; agent-based colony &middot; v1.9.1</span>
 </header>
 
 <div class="stage">
-  <canvas id="cv" width="800" height="560"></canvas>
+  <canvas id="cv" width="800" height="1300"></canvas>
 </div>
 
 <div class="vitals">
@@ -124,6 +125,7 @@ footer b{color:var(--bone);font-weight:600}
     <button class="lyr" data-l="trail" aria-pressed="true">Trail</button>
     <button class="lyr" data-l="home" aria-pressed="true">Home marking</button>
     <button class="lyr" data-l="temp" aria-pressed="false">Temperature</button>
+    <button id="b-view" aria-pressed="false" title="Both regions always run; this only chooses which one you see">Outworld view</button>
   </div>
   <div class="row">
     <span class="lab">Ambient temperature</span>
@@ -202,7 +204,27 @@ footer b{color:var(--bone);font-weight:600}
 
 const CFG = {
   // --- grid ---
-  GW:160, GH:112, CELL:5,
+  GW:160, GH:316, CELL:5,
+  // The world is layered, not a disc of soil floating in open space.
+  // Outworld on top, an impenetrable cap, then soil all the way down. The
+  // disc had a rim: a gallery dug near it broke out into open air and the
+  // colony ended up living in an open pit. Layers make that impossible,
+  // and put the only way in through the cap where it belongs.
+  // At ~1cm per cell the soil column is ~2.35m, against the ~2m depth
+  // reported for mature L. niger nests. [C]
+  // Two projections over ONE plane. The nest is drawn side-on, so depth
+  // reads as depth; the outworld is drawn from above, so an ant crossing
+  // it reads as walking rather than flying. Nothing in the physics knows
+  // the difference - it is one 2D grid, and the seam in the cap is where
+  // an ant passes from one region to the other. Only the drawing changes.
+  SKY_H:78,               // outworld rows: the foraging plane, seen from above
+  NEST_SKY:16,            // rows of ground kept in the nest view. The heap
+                          // reached row 70 with 7 rows shown and its top
+                          // was cut off, so this is headroom for it to grow
+  SLAB_H:3,               // stone: never diggable, never fillable
+  ENTRANCE_W:4,           // cells of gap in the cap. A pinhole in an 800px
+                          // wall is not findable by a deflecting random walk;
+                          // this is the funnel width, not a biological claim.
   // Mature L. niger colonies average ~5,500 workers. 1,200 was an array bound
   // masquerading as an ecological ceiling — every "plateau" measured against it
   // was really the colony hitting the edge of its own storage.
@@ -323,8 +345,19 @@ const CFG = {
   USE_TAU:15,             // days over which occupancy is averaged
   CELL_COMMIT:240,        // days before freshly dug space may be reconsidered
   REMODEL_T:12,           // below this nobody digs or fills: the winter lull
-  NEST_MIN:200,           // never shrink below the founding chamber
-  SOIL_R:44,              // radius of diggable ground, in cells
+  // Never shrink below the founding chamber. Derived from the chamber that
+  // buildWorld() actually cuts rather than stated as a number: the old 200
+  // was tied to the disc geometry, and after the world was re-laid out it sat
+  // ABOVE the 142-cell founding nest, so backfilling was blocked outright
+  // until a colony had dug past it. See nestMin.
+  // Surface warmth decaying with depth, replacing the old whole-world
+  // linear ramp. Calibrated so the founding chamber sits at the offset it
+  // had before the world was re-laid out, so the new geometry does not
+  // silently shift brood development. Seasonal DAMPING with depth - real
+  // soil flattens the annual swing, not just the mean - is a separate
+  // change with its own control, and is deliberately not done here.
+  SURF_WARM:6,            // excess over ambient at the surface
+  SOIL_TAU:14,            // e-folding depth of that excess, in cells
   // A hauled fragment is butchered into several larval meals. Raising this is a
   // granularity change, not a food buff: carcass stock below is divided by the
   // same factor, so meals per carcass are unchanged and only the number of
@@ -518,7 +551,7 @@ function angDelta(a,b){ let d=(b-a)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=T
 
 /* ================================================================== WORLD */
 const W=CFG.GW*CFG.CELL, H=CFG.GH*CFG.CELL, N=CFG.GW*CFG.GH;
-const OPEN=0, WALL=1, NEST=2;
+const OPEN=0, WALL=1, NEST=2, ROCK=3;
 const SOIL=WALL;   // same impassable cell type, but diggable
 
 let terrain, trail, home, tempF, antCount;
@@ -532,7 +565,17 @@ function cellAt(x,y){
   const gx=clamp(x/CFG.CELL|0,0,CFG.GW-1), gy=clamp(y/CFG.CELL|0,0,CFG.GH-1);
   return gi(gx,gy);
 }
-const NEST_CX=W*0.5, NEST_CY=H*0.52;
+const SOIL_TOP=CFG.SKY_H+CFG.SLAB_H;      // first diggable row
+// Where spoil is heaped: out on the ground, clear of the seam.
+const SURFACE_Y=(CFG.SKY_H-3)*CFG.CELL;
+const NEST_CX=W*0.5, NEST_CY=(SOIL_TOP+10)*CFG.CELL;
+// Deepest excavated row. Pheromone below this is identically zero, so the
+// evaporation pass stops there instead of multiplying two metres of
+// untouched soil by a decay constant every few ticks.
+let deepestRow=0;
+// The founding chamber's size, captured when it is cut. The floor for
+// backfilling, so it tracks the geometry instead of being asserted.
+let nestMin=0;
 let entranceX, entranceY;
 let nestCells=0, terrainDirty=true;
 
@@ -542,23 +585,35 @@ let nestCells=0, terrainDirty=true;
 function buildWorld(){
   terrain=new Uint8Array(N); trail=new Float32Array(N);
   home=new Float32Array(N);  tempF=new Float32Array(N); mound=new Uint8Array(N);
-  const cx=Math.round(NEST_CX/CFG.CELL), cy=Math.round(NEST_CY/CFG.CELL);
-  const R=CFG.SOIL_R;
   nestCells=0;
-  for(let gy=0;gy<CFG.GH;gy++)for(let gx=0;gx<CFG.GW;gx++){
-    const dx=gx-cx, dy=gy-cy;
-    terrain[gi(gx,gy)] = (dx*dx+dy*dy)<R*R ? SOIL : OPEN;
+  const cx=Math.round(NEST_CX/CFG.CELL), chy=Math.round(NEST_CY/CFG.CELL);
+  const slabTop=CFG.SKY_H;
+  // Three bands. Everything below the cap is diggable, so a gallery can
+  // never break out into open air the way it could through the old rim.
+  for(let gy=0;gy<CFG.GH;gy++){
+    const t = gy<slabTop ? OPEN : (gy<SOIL_TOP ? ROCK : SOIL);
+    for(let gx=0;gx<CFG.GW;gx++) terrain[gi(gx,gy)]=t;
   }
-  for(let gy=cy-6;gy<=cy+6;gy++)for(let gx=cx-7;gx<=cx+7;gx++){
+  // The way in is a seam in the stone. L. niger nests under slabs and
+  // paving and enters at the edge; nothing excavates the cap itself.
+  const half=CFG.ENTRANCE_W>>1;
+  for(let gy=slabTop;gy<SOIL_TOP;gy++)
+    for(let gx=cx-half;gx<=cx+half;gx++) terrain[gi(gx,gy)]=OPEN;
+  // Founding chamber, and the shaft joining it to the seam.
+  for(let gy=chy-6;gy<=chy+6;gy++)for(let gx=cx-7;gx<=cx+7;gx++){
     if(gx<1||gx>=CFG.GW-1||gy<1||gy>=CFG.GH-1) continue;
-    const dx=(gx-cx)/7, dy=(gy-cy)/6;
+    const dx=(gx-cx)/7, dy=(gy-chy)/6;
     if(dx*dx+dy*dy<1){ terrain[gi(gx,gy)]=NEST; nestCells++; }
   }
-  for(let gy=cy-R-1;gy<cy-5;gy++)for(let gx=cx-1;gx<=cx+1;gx++){
-    if(gx<1||gx>=CFG.GW-1||gy<1||gy>=CFG.GH-1) continue;
+  for(let gy=SOIL_TOP;gy<chy-5;gy++)for(let gx=cx-half;gx<=cx+half;gx++){
     if(terrain[gi(gx,gy)]===SOIL){ terrain[gi(gx,gy)]=NEST; nestCells++; }
   }
-  entranceX=cx*CFG.CELL; entranceY=(cy-R)*CFG.CELL;
+  // The homing target sits INSIDE the passage, not on the sky side of it.
+  // Put it above the stone and a returning forager reaches it, is still not
+  // inNest, has nothing further to steer towards, and parks at the mouth: the
+  // whole first cohort did exactly that and starved holding full crops.
+  entranceX=cx*CFG.CELL; entranceY=(SOIL_TOP+1)*CFG.CELL;
+  deepestRow=chy+7; nestMin=nestCells;
   terrainDirty=true;
 }
 
@@ -568,7 +623,8 @@ function buildWorld(){
 // costs nothing — the alternative was rewriting 17,920 cells every sim-day.
 function refreshTemp(){
   for(let gy=0;gy<CFG.GH;gy++){
-    const grad=6*(1-gy/CFG.GH);
+    const depth=Math.max(0,gy-SOIL_TOP);
+    const grad=CFG.SURF_WARM*Math.exp(-depth/CFG.SOIL_TAU);
     for(let gx=0;gx<CFG.GW;gx++) tempF[gi(gx,gy)]=grad;
   }
 }
@@ -1121,7 +1177,13 @@ function WORKER_PROGRAM(i, dt){
       // walk re-treads its own ground; a straightish ray actually sweeps the
       // annulus where the food is. Scouts do leave on notably straight paths.
       if(S.trip[i] < 0.45*CFG.TRIP_MAX*CFG.DAY_SECONDS){
-        const away=Math.atan2(S.y[i]-NEST_CY,S.x[i]-NEST_CX);
+        // Outbound from the mouth. In a layered world that is sideways
+        // across the surface, not radially away from a buried chamber.
+        // At the mouth dx is ~0 and atan2(0,0) is 0, which sent every scout
+        // due east. Fall back to whichever way she is already facing.
+        const dxa=S.x[i]-entranceX;
+        const away=Math.atan2((S.y[i]-entranceY)*0.25,
+                              Math.abs(dxa)>2?dxa:Math.cos(S.a[i]));
         S.a[i]+=angDelta(S.a[i],away)*Math.min(1,1.1*dt);
       }
     }
@@ -1160,6 +1222,7 @@ function WORKER_PROGRAM(i, dt){
     const c=digFace(S.x[i],S.y[i]);
     if(c>=0){
       terrain[c]=NEST; nestCells++; terrainDirty=true; dugAt[c]=simDay; logC.digs++;
+      const dr=(c/CFG.GW)|0; if(dr>deepestRow) deepestRow=dr;
       S.pel[i]=1; S.dg[i]=1; S.st[i]=6; break;
     }
     // Away from the crowd she just left: that is where the soil is.
@@ -1210,10 +1273,31 @@ function WORKER_PROGRAM(i, dt){
 
   /* --- 6: hauling spoil out to the mound --------------------------------- */
   case 6: {
-    headTo(i,entranceX,entranceY,dt); move(i,dt);
-    if(terrain[cellAt(S.x[i],S.y[i])]===OPEN){
-      mound[cellAt(S.x[i],S.y[i])]=Math.min(6,mound[cellAt(S.x[i],S.y[i])]+1);
-      S.pel[i]=0; S.st[i]=0;
+    // Out onto the ground, not merely into the seam. Aimed at the homing
+    // target she dropped her load the moment she entered the passage, because
+    // the seam itself is OPEN, and the pile built up inside the hole instead
+    // of on the surface where it belongs.
+    headTo(i,entranceX,SURFACE_Y,dt); move(i,dt);
+    if(terrain[cellAt(S.x[i],S.y[i])]===OPEN && S.y[i] < CFG.SKY_H*CFG.CELL){
+      // Drop on the least-loaded spot within reach rather than underfoot.
+      // Every ant aiming at one point filled the same handful of cells to
+      // their cap and the heap stopped growing after four of them; a
+      // mound is a mound because the spoil spreads.
+      const gx0=clamp((S.x[i]/CFG.CELL)|0,1,CFG.GW-2);
+      const gy0=clamp((S.y[i]/CFG.CELL)|0,1,CFG.SKY_H-1);
+      let best=-1,bl=99;
+      for(let dy=-2;dy<=2;dy++)for(let dx=-4;dx<=4;dx++){
+        const gx=gx0+dx, gy=gy0+dy;
+        if(gx<1||gx>=CFG.GW-1||gy<1||gy>=CFG.SKY_H) continue;
+        const k=gi(gx,gy);
+        if(terrain[k]!==OPEN) continue;
+        const load=mound[k]+Math.abs(dx)*0.20+Math.abs(dy)*0.35;
+        if(mound[k]<6 && load<bl){ bl=load; best=k; }
+      }
+      if(best>=0){
+        mound[best]=Math.min(6,mound[best]+1); terrainDirty=true;
+        S.pel[i]=0; S.st[i]=0;
+      } else { S.a[i]+=(rnd()-0.5)*2.4; }   // heap full here, walk on
     }
     break;
   }
@@ -1305,7 +1389,7 @@ function fillTip(x,y){
 }
 function tryFill(i,dt){
   const S=ants;
-  if(S.pel[i] || S.dg[i]>0.5 || nestCells<=CFG.NEST_MIN) return false;
+  if(S.pel[i] || S.dg[i]>0.5 || nestCells<=nestMin) return false;
   if(tempAt(S.x[i],S.y[i])<CFG.REMODEL_T) return false;   // winter lull
   if(rnd() > CFG.FILL_RATE*dt) return false;
   const drive=clamp((CFG.FILL_USE-useNear(S.x[i],S.y[i]))/CFG.FILL_SPAN,0,1);
@@ -1340,8 +1424,9 @@ function dist(x1,y1,x2,y2){const a=x1-x2,b=y1-y2;return Math.sqrt(a*a+b*b);}
 function move(i,dt){
   const S=ants, sp=CFG.SPEED*dt*thermNow;
   const nx=S.x[i]+Math.cos(S.a[i])*sp, ny=S.y[i]+Math.sin(S.a[i])*sp;
-  if(nx<2||nx>W-2||ny<2||ny>H-2||terrain[cellAt(nx,ny)]===WALL){
-    S.a[i]+=Math.PI*(0.5+rnd());                    // deflect off soil
+  const tgt = (nx<2||nx>W-2||ny<2||ny>H-2) ? WALL : terrain[cellAt(nx,ny)];
+  if(tgt===WALL||tgt===ROCK){
+    S.a[i]+=Math.PI*(0.5+rnd());                    // deflect off soil or stone
     return;
   }
   S.x[i]=nx; S.y[i]=ny;
@@ -1377,7 +1462,8 @@ function headTo(i,tx,ty,dt){
 function senseTrail(i,dt,gain){
   const S=ants;
   const read=(a)=>{ const px=S.x[i]+Math.cos(a)*CFG.SENS_D, py=S.y[i]+Math.sin(a)*CFG.SENS_D;
-    return terrain[cellAt(px,py)]===WALL?-1:trail[cellAt(px,py)]; };
+    const tt=terrain[cellAt(px,py)];
+    return (tt===WALL||tt===ROCK)?-1:trail[cellAt(px,py)]; };
   const l=read(S.a[i]-CFG.SENS_A), c=read(S.a[i]), r=read(S.a[i]+CFG.SENS_A);
   if(c>=l && c>=r) S.a[i]+=(rnd()-0.5)*CFG.WANDER*dt;
   else if(l>r)     S.a[i]-=CFG.TURN*gain*dt;
@@ -1905,7 +1991,11 @@ let evapTick=0;
 function stepFields(){
   if((evapTick=(evapTick+1)%CFG.EVAP_EVERY)!==0) return;
   const te=Math.pow(CFG.TRAIL_EVAP,CFG.EVAP_EVERY), he=Math.pow(CFG.HOME_EVAP,CFG.EVAP_EVERY);
-  for(let i=0;i<N;i++){ trail[i]*=te; home[i]*=he; }
+  // Nothing has ever walked below the deepest gallery, so the fields there
+  // are identically zero and decaying them is wasted work. With a 2m soil
+  // column that is most of the world for most of a colony's life.
+  const lim=Math.min(N,(deepestRow+8)*CFG.GW);
+  for(let i=0;i<lim;i++){ trail[i]*=te; home[i]*=he; }
 }
 function step(dt){
   const dtDay=dt/CFG.DAY_SECONDS;
@@ -1988,16 +2078,40 @@ function step(dt){
 
 /* ================================================================ RENDER */
 const cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+const stage=document.querySelector(".stage");
+// Which region is on screen. Both are simulated either way; this only
+// selects what is drawn, so switching costs nothing and misses nothing.
+let view="nest";
+function viewRows(){
+  return view==="out" ? [0, CFG.SKY_H]
+                      : [Math.max(0,CFG.SKY_H-CFG.NEST_SKY), CFG.GH];
+}
+function syncView(){
+  const [r0,r1]=viewRows();
+  const h=(r1-r0)*CFG.CELL;
+  if(cv.height!==h) cv.height=h;
+  if(stage) stage.scrollTop=0;
+  terrainDirty=true;
+}
 const off=document.createElement("canvas"); off.width=CFG.GW; off.height=CFG.GH;
 const octx=off.getContext("2d"), img=octx.createImageData(CFG.GW,CFG.GH);
 const terrCv=document.createElement("canvas"); terrCv.width=W; terrCv.height=H;
 
 function paintTerrain(){
   const c=terrCv.getContext("2d");
-  c.fillStyle="#1B1510"; c.fillRect(0,0,W,H);
+  c.fillStyle="#0E0B08"; c.fillRect(0,0,W,H);
+  // The outworld is ground seen from above, so it reads as lit earth
+  // rather than as air. In the nest view only the few rows above the cap
+  // show, and there the same tone reads as the ground surface.
+  c.fillStyle="#2A2119"; c.fillRect(0,0,W,CFG.SKY_H*CFG.CELL);
   for(let gy=0;gy<CFG.GH;gy++)for(let gx=0;gx<CFG.GW;gx++){
-    const t=terrain[gi(gx,gy)]; if(t===OPEN) continue;
-    c.fillStyle = t===SOIL ? "#0E0B08" : "#33271B";
+    const t=terrain[gi(gx,gy)];
+    if(t===OPEN){
+      if(gy>=CFG.SKY_H){ c.fillStyle="#1B1510";   // the seam through the cap
+        c.fillRect(gx*CFG.CELL,gy*CFG.CELL,CFG.CELL,CFG.CELL); }
+      continue;
+    }
+    c.fillStyle = t===ROCK ? "#4A443C" : t===SOIL ? "#0E0B08" : "#33271B";
     c.fillRect(gx*CFG.CELL,gy*CFG.CELL,CFG.CELL,CFG.CELL);
   }
   // spoil heaped around the mouth
@@ -2010,11 +2124,26 @@ function paintTerrain(){
 }
 function draw(){
   if(terrainDirty){ paintTerrain(); terrainDirty=false; }
-  ctx.drawImage(terrCv,0,0);
+  const [vr0,vr1]=viewRows();
+  const srcY=vr0*CFG.CELL, srcH=(vr1-vr0)*CFG.CELL;
+  ctx.setTransform(1,0,0,1,0,-srcY);      // world coords, shifted into view
+  ctx.drawImage(terrCv,0,srcY,W,srcH,0,srcY,W,srcH);
 
   // scalar fields as a single composited layer
+  // Only the rows on screen. The world is 260 rows deep and the viewport shows
+  // perhaps a fifth of it, so compositing all of it every frame was most of the
+  // render budget - enough that the page stopped answering while stepping.
+  // Only the rows on screen, and only within the region being viewed.
+  // If layout has not settled the viewport measures zero, which would clip
+  // the band to nothing and draw blank, so fall back to the whole region.
+  const scale = (cv.clientHeight>0 ? cv.clientHeight : srcH)/srcH;
+  const vh = (stage && stage.clientHeight>0) ? stage.clientHeight/scale : 0;
+  const full = !(vh>1);
+  const top = full ? srcY : srcY + stage.scrollTop/scale;
+  const gy0 = full ? vr0 : Math.max(vr0, ((top/CFG.CELL)|0) - 2);
+  const gy1 = full ? vr1 : Math.min(vr1, (((top+vh)/CFG.CELL)|0) + 3);
   const d=img.data;
-  for(let i=0;i<N;i++){
+  for(let i=gy0*CFG.GW, end=gy1*CFG.GW; i<end; i++){
     const tr=layers.trail?Math.min(1,trail[i]/3.2):0;
     const hm=layers.home ?Math.min(1,home[i]/1.6)*0.42:0;
     const tp=layers.temp ?clamp((tempF[i]+ambient-14)/16,0,1)*0.34:0;
@@ -2024,8 +2153,9 @@ function draw(){
     d[o+2]= 60*tr + 134*hm +  58*tp;
     d[o+3]=Math.min(255,(tr*235+hm*150+tp*160));
   }
-  octx.putImageData(img,0,0);
-  ctx.drawImage(off,0,0,W,H);
+  octx.putImageData(img,0,0,0,gy0,CFG.GW,Math.max(0,gy1-gy0));
+  ctx.drawImage(off,0,gy0,CFG.GW,Math.max(0,gy1-gy0),
+                    0,gy0*CFG.CELL,W,Math.max(0,gy1-gy0)*CFG.CELL);
 
   // food. Aphid colonies swell and fade with the vigour of their host plant;
   // prey are single hard points that simply run out.
@@ -2121,12 +2251,22 @@ function stats(){
 const lerp=(a,b,t)=>a+(b-a)*t;
 const pick=(r)=>lerp(r[0],r[1],rnd());
 
-// Somewhere on open ground, far enough out that finding it is work.
+// Somewhere on the surface, far enough from the mouth that finding it is
+// work. Distance is now along the surface rather than radial: the outworld
+// is a band above the stone, so there is no "below the nest" to forage in.
 function spawnSite(rmin,rmax){
+  const lo=rmin??CFG.ENV.R_MIN, hi=rmax??CFG.ENV.R_MAX;
   for(let tries=0;tries<60;tries++){
-    const ang=rnd()*TAU, rad=pick([rmin??CFG.ENV.R_MIN, rmax??CFG.ENV.R_MAX]);
-    const x=NEST_CX+Math.cos(ang)*rad, y=NEST_CY+Math.sin(ang)*rad;
-    if(x<14||x>W-14||y<14||y>H-14) continue;
+    // Anywhere on the plane, at a distance from the mouth that makes finding
+    // it work. Distance is now true ground distance in both axes, which is
+    // the point of drawing this region from above.
+    const ang=rnd()*TAU, rad=pick([lo,hi]);
+    const x=entranceX+Math.cos(ang)*rad;
+    // Measured up from the mouth, which sits at the bottom edge of the
+    // plane, so the whole spread lands on open ground rather than in the
+    // stone below it.
+    const y=CFG.SKY_H*CFG.CELL-8-Math.abs(Math.sin(ang))*rad;
+    if(x<14||x>W-14) continue;
     if(terrain[cellAt(x,y)]!==OPEN) continue;
     return {x,y};
   }
@@ -2191,6 +2331,12 @@ el("b-insane").onclick=e=>{
   insane=!insane; e.target.setAttribute("aria-pressed",insane);
   if(insane) document.querySelectorAll(".spd").forEach(o=>o.setAttribute("aria-pressed",false));
   else { speed=1; document.querySelector('.spd[data-s="1"]').setAttribute("aria-pressed",true); }};
+el("b-view").onclick=e=>{
+  view = view==="nest" ? "out" : "nest";
+  e.target.textContent = view==="out" ? "Nest view" : "Outworld view";
+  e.target.setAttribute("aria-pressed", view==="out");
+  syncView();
+};
 document.querySelectorAll(".lyr").forEach(b=>b.onclick=()=>{
   layers[b.dataset.l]=!layers[b.dataset.l];
   b.setAttribute("aria-pressed",layers[b.dataset.l]);});
@@ -2210,7 +2356,7 @@ function syncSeason(){
 }
 
 /* ---------------------------------------------------------------- main loop */
-reset(); paintTerrain();
+reset(); syncView(); paintTerrain();
 
 let last=performance.now(), acc=0, statTick=0;
 let insane=false, tickAcc=0, tickClock=0, daysPerSec=0;
