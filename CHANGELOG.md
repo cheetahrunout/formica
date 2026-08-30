@@ -10,6 +10,23 @@ several of them were more informative than the fix.
 
 ---
 
+## Housekeeping — the page deploys itself
+
+`.github/workflows/pages.yml` publishes `formica.html` to GitHub Pages on every
+push to `main`. No build step and no version bump: the simulator is one
+standalone file, the workflow only copies it to `index.html` (with the two
+legacy builds alongside, so they stay reachable as named controls) and uploads
+that as the Pages artifact. The header version string identifies the simulator
+build, and this changed no simulator code, so it stays at v1.9.1.
+
+Pages must be sourced from *GitHub Actions* in the repository settings; on a
+private repo that requires a paid plan, so on the free plan the repo has to be
+public for the deploy step to succeed. Until then the workflow runs and fails at
+`configure-pages` — a failure that means "Pages is off", not "the workflow is
+wrong".
+
+---
+
 ## v1.9.1 — two projections over one plane
 
 v1.9 drew the whole world side-on, which meant foragers appeared to fly around
