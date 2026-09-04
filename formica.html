@@ -68,7 +68,7 @@ footer b{color:var(--bone);font-weight:600}
 <div class="wrap">
 <header>
   <h1>Formica</h1>
-  <span class="sub">Lasius niger &middot; agent-based colony &middot; v1.9.1</span>
+  <span class="sub">Lasius niger &middot; agent-based colony &middot; v1.9.2</span>
 </header>
 
 <div class="stage">
@@ -455,7 +455,12 @@ const CFG = {
   // founding, which follows a nuptial flight just after midsummer — so the
   // peak is already ~25 days behind her and the year runs downhill into her
   // first winter, with the founding brood finishing first.
-  SEASON:{ TMEAN:16, TAMP:9, PEAK:-25 },   // 7C midwinter, 25C midsummer
+  // YEAR is the period of the thermal cycle in sim-days. It is 365 for every
+  // normal run; it exists as a handle because the endogenous sand-glass and a
+  // thermal gate are observationally identical under an exactly annual,
+  // noiseless curve. Rescaling the environmental year separates them — see
+  // CHANGELOG v1.9.2.
+  SEASON:{ TMEAN:16, TAMP:9, PEAK:-25, YEAR:365 }, // 7C midwinter, 25C midsummer
 
   // Temperature scales rates through one channel: how fast an ant does anything.
   // Rathery et al. found ants dig FASTER when warm purely because they move
@@ -747,7 +752,10 @@ function countHeld(){
 // Build the file exactly as it is written to disk. Synchronous on purpose:
 // the caller clears runLog immediately afterwards.
 function logText(reason){
-  return "# formica run "+runId+"  seed "+runSeed+"  ended: "+reason
+  return "# formica run "+runId+"  seed "+runSeed
+    +"  season "+CFG.SEASON.TMEAN+"/"+CFG.SEASON.TAMP+"/"+CFG.SEASON.PEAK
+    +"  year "+CFG.SEASON.YEAR
+    +"  ended: "+reason
     +"  at day "+simDay.toFixed(1)+"\n"
     +"# events:\n"+runEvents.map(e=>"# "+e).join("\n")+"\n"
     +LOG_COLS.join("\t")+"\n"+runLog.join("\n")+"\n";
@@ -2002,7 +2010,7 @@ function step(dt){
   simDay+=dtDay;
   if(seasons){
     const S=CFG.SEASON;
-    ambient = S.TMEAN + S.TAMP*Math.cos(2*Math.PI*(simDay-S.PEAK)/365);
+    ambient = S.TMEAN + S.TAMP*Math.cos(2*Math.PI*(simDay-S.PEAK)/S.YEAR);
   }
   thermNow=therm();
   if(simDay-lastSample>=10){

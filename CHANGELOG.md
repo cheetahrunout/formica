@@ -10,6 +10,110 @@ several of them were more informative than the fix.
 
 ---
 
+## v1.9.2 — the dormancy clock, separated from the thermometer
+
+The README has claimed since v1.7 that dormancy here is endogenous: she stops in
+late summer because her internal period elapsed, not because it got cold. Run 1
+was offered as the evidence — onset invariant to 0.1 °C over fifteen years, 18.2
+°C on day-of-year 52.0, interval exactly 365.00.
+
+That was never evidence. The ambient curve is noiseless and exactly annual, so
+"195 days after reactivation" and "the day the falling limb reaches 18.2 °C" name
+the same date every year forever. `summarise-runs.py` had said as much in a NOTE
+since v1.8b and told the reader to go and perturb the thermal year. This entry is
+that experiment.
+
+### The harness runs here now
+
+`CLAUDE.md` said there was no JS runtime and probes had to be driven from the
+browser console. That is stale: node 22 and bun are both present. `harness.mjs`
+extracts the `<script>` from a build, evaluates it inside a function wrapper
+behind DOM stubs, and returns live getters into its scope — so a probe is an
+ordinary script and a sweep is `xargs -P4`.
+
+Throughput is ~17k ticks/sec against Edge's ~39k, so the browser is still the
+faster single run. What the harness buys is parallel matched arms and no
+devtools timeout, which is what an experiment with twelve arms needs.
+
+**It is the same simulator, and that is checked, not assumed.** Headless from
+seed 20260828 the queen goes dormant on days 417.0, 782.0 and 1147.0 at 18.19 °C
+and reactivates on 587.0, 952.0 and 1317.0 — matching, to the sample, the event
+lines recorded by run 1 in a real browser.
+
+Two things the harness needed and one it caught:
+
+- Getters, not values, for everything the simulator declares with `let`.
+  `reset()` rebuilds `ants`, `brood`, `larder` and `logC` outright, so a
+  reference captured before `reset()` keeps pointing at the previous colony and
+  reads as plausible, empty data. Found by inspection before it produced a
+  number; it is exactly the shape of failure rule 5 is about.
+- A `transform` hook, so a legacy control can be given a handle the current
+  build has and it does not, without editing a file kept precisely so it cannot
+  drift.
+- `indexedDB` is deliberately left undefined. The v1.8b log path detects that
+  and falls back to the in-memory mirror, which is what the probe reads.
+
+### `CFG.SEASON.YEAR`
+
+The period of the thermal cycle, in sim-days. 365 for every normal run; it
+exists as an experimental handle, and it is now written into the run-log header
+alongside the season triple, so a rescaled run can never be mistaken for a
+normal one.
+
+### The manipulation, and one that would not have worked
+
+Rescaling the environmental year separates the two hypotheses because only one
+of them moves:
+
+- an endogenous clock keeps the **interval** and gives up the temperature;
+- a thermal gate keeps the **temperature** and gives up the interval.
+
+A pure phase shift does not work, and it is worth recording why, because it was
+the other half of the open item. Reactivation in this build is thermally
+triggered — chilling arms it, spring warmth fires it — so the whole cycle is
+entrained to the curve. Translating the curve translates everything with it and
+both hypotheses predict the identical shift. Only rescaling breaks the tie.
+
+### Result — a double dissociation
+
+Six thermal years (200, 250, 300, 365, 450, 550 days) × two builds, seed 20260828
+forced in every arm, 1500 sim-days each. Control is `formica-v1.1-legacy.html`,
+kept since v1.2 as the thermal-gate predecessor, driven through the same probe.
+Founding year excluded throughout: she founds mid-year with a part-season, so her
+first onset differs by design. Full table in `logs/thermal-year-sweep-v192.tsv`.
+
+| build | onset temperature | reactivation → onset |
+|---|---|---|
+| v1.9.2 sand-glass | **17.53 °C spread — 97% of the entire 18 °C annual swing** | **196.0 d in all 18 events, spread 0.0** |
+| v1.1 thermal gate | 1.87 °C spread — 10% of the swing | 131–405 d, spread 274 (124% of its own mean) |
+
+Per arm, current build: onset at 11.66 °C under a 300-day year, 18.19 under 365,
+22.89 under 450, 24.81 under 550 — she stops progressively earlier in the
+thermal year as the year lengthens, because 195 days is 195 days. The control
+does the opposite: 9.8–11.9 °C at every year length, with the interval sliding
+131 → 148 → 184 → 222 → 268 → 330 days, close to a constant 0.73 of the year.
+
+**The claim survives, and it is now measured rather than asserted.** 196.0 rather
+than 195 is the daily sampling grid, not a discrepancy: `queen.glass += dtDay`
+with no thermal scaling, so the onset is `GLASS_LEN` sim-days after reactivation
+by construction, and the sweep confirms nothing else got in the way.
+
+### Entrainment fails below ~300 days, and it is not free
+
+At 300 days and above the colony locks 1:1 — realised cycle 300.0, 365.0, 450.0,
+550.0, exactly the year. At 250 and 200 it cannot: 195 active days plus the
+chilling the queen needs do not fit inside the year, so she misses springs. The
+realised cycle wanders (341–409 d at 250, 356–398 at 200) and the onset
+temperature stops settling at all — 7.28 °C one cycle and 23.41 the next.
+
+The thermal-gate control has no such failure mode. It cannot: it has no period
+of its own to mismatch. It locks 1:1 at 200 days as readily as at 550.
+
+That is a cost of the mechanism, and it emerges from it rather than being
+scripted anywhere — which is what the project asks of a cost.
+
+---
+
 ## Housekeeping — the page deploys itself
 
 `.github/workflows/pages.yml` publishes `formica.html` to GitHub Pages on every

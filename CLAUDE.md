@@ -43,13 +43,29 @@ Single file, `formica.html`. No dependencies, no build step. Open it directly.
 
 ## Testing
 
-No JS runtime here (`node`/`bun`/`deno` absent). Drive `step()` in the browser:
-open `formica.html`, set `running=false`, paste a probe into the console. Edge
-does ~39k ticks/sec (~46 sim-days/sec), ~4× the old headless rate, and tests the
-real environment rather than a stub. `probe-v18-diapause.js` is a worked example
-and self-chunks so it never trips a devtools timeout. If a runtime appears, the
-original harness still works: extract the `<script>`, stub document/ctx/
-performance, `eval(src + probe)`.
+Two ways, and they agree — checked, not assumed (v1.9.2).
+
+**Headless (`harness.mjs`, node 22 or bun).** `load(file, expose, transform)`
+pulls the `<script>` out of a build, evaluates it in a function wrapper behind
+DOM stubs, and hands back live getters into its scope. ~17k ticks/sec, so a
+single run is slower than the browser — what it buys is parallel matched arms
+(`xargs -P4`) and no devtools timeout. `probe-v192-thermal-year.js` is the
+worked example, and it drives `formica-v1.1-legacy.html` through the same code
+path as the current build.
+
+- **Getters, not values, for every `let`.** `reset()` rebuilds `ants`, `brood`,
+  `larder` and `logC` outright; a reference captured before it keeps pointing at
+  the previous colony and reads as plausible, empty data.
+- `transform` rewrites the source before eval — that is how a legacy control
+  gets a handle it does not have, without editing a file kept so it cannot
+  drift. Assert inside it.
+- `indexedDB` is left undefined on purpose: the log path detects that and falls
+  back to the in-memory mirror, which is what a probe reads.
+
+**Browser.** Open `formica.html`, set `running=false`, paste a probe into the
+console. Edge does ~39k ticks/sec (~46 sim-days/sec) and tests the real
+environment rather than a stub. `probe-v18-diapause.js` is the worked example
+and self-chunks so it never trips a devtools timeout.
 
 `reset(seed)` forces the PRNG *before* `buildWorld()` — assigning `seed`
 afterwards is too late. The seed goes into the log header, so any logged run
@@ -67,7 +83,10 @@ means a reload will cost you the pile.
 
 `summarise-runs.py` triages a pile of logs into one line per run plus detail
 only where a flag trips. The flags encode failures this project has shipped, so
-a flag means go and look. Run it before reading any raw TSV.
+a flag means go and look. Run it before reading any raw TSV. It groups dormancy
+timing by `CFG.SEASON.YEAR` and will name the invariant — interval or
+temperature — when a pile spans more than one thermal year. Stdlib only, and
+3.8+: it silently required 3.12 until v1.9.2, through one nested-quote f-string.
 
 **Non-negotiables, each learned the hard way:**
 
@@ -103,10 +122,20 @@ parameters in source and swept, not defended.
 - Keep legacy builds as named controls, relabelled so nobody mistakes them for
   current.
 
-## Current state (v1.9.1)
+## Current state (v1.9.2)
 
 Emergent and measured: local trophallactic nutrition; brood annuli (egg 34.8 <
 pupa 65.9 < larva 70.3, ~19k observations; control shows all ~5.5).
+
+Dormancy onset is endogenous, and that is now *measured* rather than inferred
+from an annual curve under which it was not identifiable. Rescale
+`CFG.SEASON.YEAR` across 200–550 days and the reactivation→onset interval holds
+at 196.0 in all 18 steady-state events while the onset temperature moves over
+97% of the annual swing; the v1.1 thermal-gate control does the exact opposite
+(1.87 °C, interval 131→405). Below ~300 days the colony cannot entrain — 195
+active days plus the required chilling do not fit in the year — and both seeds
+went extinct at 200. That failure mode is specific to having a clock; the
+control locks 1:1 at every year length.
 
 Nest volume is **not** the ~3 cells/ant previously claimed here — run 1 gives ~3
 only in years 0–2, 5–6 at steady state, ratcheting to 86 after the population
@@ -119,11 +148,11 @@ peak as the nest fails to shrink with the colony.
   not the pair: extinction on day 6531.6, half the file post-extinction padding
   from the v1.8 bug. Rerun on v1.8a, the first build where both arms can share a
   seed.
-- **Dormancy may not be endogenous.** Run 1's onset is invariant to 0.1 °C over
-  15 years (18.2 °C, doy 52.0, interval exactly 365.00), but the ambient curve
-  is noiseless and exactly annual — so an endogenous clock and a thermal gate
-  are observationally identical there. Phase-shift or rescale the thermal year
-  to tell them apart. Cheap, and it tests a headline claim.
+- **Circannual mismatch is unexplained.** v1.9.2 settled *whether* the clock is
+  endogenous; it did not explain the shape of the cost. Steady-state population
+  peaks near a 300-day year rather than at 365, the year the parameters were
+  chosen for, and falls away on both sides. Two seeds only, one build, and no
+  mechanism — go and look before repeating the number.
 - Nest-size ratchet: population halved over 1530 days while cells retained 85%.
   `CELL_COMMIT` shrink-lag is the suspect and is understated.
 - `LARVA_WINTER_DRAIN` (0.004/day, v1.8) not yet swept. Before it, diapausing
