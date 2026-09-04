@@ -128,8 +128,13 @@ gallery at claude.ai/code/artifacts.
 - Bump the header version string and add a `CHANGELOG.md` entry with every
   change. Record failed attempts — often the informative part.
 - Extend the TSV run logging whenever a new measurable appears. Don't ask first.
-- Keep legacy builds as named controls, relabelled so nobody mistakes them for
-  current.
+- **Frozen controls: never develop, fix or tidy them.** `formica-v1.1-legacy.html`
+  and `formica-global-legacy.html` are dead on purpose and carry a banner saying
+  so; a bug in a control is part of the control. Need a handle one lacks? Rewrite
+  at load time with the harness `transform`, never on disk. Presentation-only
+  edits must leave the `<script>` hash unchanged — and must not contain the
+  literal opening script tag, which the harness matches on. `CONTROLS.md` has the
+  policy, the hashes and the check.
 
 ## Current state (v1.9.2)
 

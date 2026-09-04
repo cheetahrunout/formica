@@ -48,8 +48,9 @@ none of it scripted, all of it measured against a matched control.
 | `harness.mjs` | loads any build headless under node or bun, for parallel matched arms |
 | `probe-v192-thermal-year.js` | worked example: the sweep that separated the dormancy clock from the thermometer |
 | `summarise-runs.py` | triages a pile of run logs; flags encode failures this project has shipped |
-| `formica-v1.1-legacy.html` | thermal-gate predecessor, kept as the control the endogenous-cycle build was measured against |
-| `formica-global-legacy.html` | original global-signal build, kept as the baseline |
+| `CONTROLS.md` | what is deliberately frozen, what each control proves, and why deleting it breaks a claim |
+| `formica-v1.1-legacy.html` | **frozen at v1.1**, never developed — the thermal-gate control the endogenous-dormancy result is measured against |
+| `formica-global-legacy.html` | **frozen at v0.1**, never developed — the pre-governing-rule baseline |
 
 ## Long runs
 

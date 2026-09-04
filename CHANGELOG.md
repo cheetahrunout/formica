@@ -162,6 +162,37 @@ for that path.
 
 ---
 
+## Housekeeping — the frozen controls say so on their face
+
+The two legacy builds were labelled `LEGACY` in a header span and nowhere else.
+Nothing said they are *never to be developed*, and nothing said what breaks if
+they are deleted — which, for `formica-v1.1-legacy.html`, is the v1.9.2 dormancy
+result, since that result is a comparison against it.
+
+They are not deleted. They are marked: a `<title>` so a browser tab cannot be
+mistaken for the live build, and a banner naming the build, what it is the
+control for, and that changing it silently invalidates every result citing it.
+`CONTROLS.md` carries the policy and extends it to the run-log fixtures.
+
+**The edits are presentation only, and that is verified rather than promised.**
+The SHA-256 of each file's `<script>` block was taken before and after and is
+unchanged — `37afe0be…` and `17da3760…` — and both builds were loaded and
+stepped under `harness.mjs` afterwards.
+
+**What the hash check caught.** The first attempt put the literal opening tag of
+a script element inside the banner's own CSS comment. `harness.mjs` extracts a
+build by matching that tag, so it started reading from inside the comment and
+handed the simulator ~6.7 KB of stylesheet and markup as source. The page
+rendered perfectly; the control was silently ruined. Nothing about the diff
+looked wrong, and no assertion in the patch fired — only comparing the extracted
+source against its own prior hash found it. This is non-negotiable 1 arriving
+somewhere new: asserting that a patch *applied* says nothing about whether it
+applied something harmless.
+
+No simulator code changed, so the build stays at v1.9.2.
+
+---
+
 ## Housekeeping — the Field Manual is now findable from the repo
 
 The long-form reference lives as a published artifact rather than in the repo,
