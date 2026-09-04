@@ -60,6 +60,12 @@ exists as an experimental handle, and it is now written into the run-log header
 alongside the season triple, so a rescaled run can never be mistaken for a
 normal one.
 
+Checked rather than argued: 300 sim-days from seed 20260828 produce a
+**byte-identical run log** under v1.9.1 and v1.9.2 (sha256 e5c76189f360e185).
+`(simDay-PEAK)/365` and `(simDay-PEAK)/S.YEAR` with `S.YEAR===365` are the same
+arithmetic, but this project has been wrong about what a file does often enough
+that the reasoning does not settle it.
+
 ### The manipulation, and one that would not have worked
 
 Rescaling the environmental year separates the two hypotheses because only one
