@@ -133,9 +133,12 @@ from an annual curve under which it was not identifiable. Rescale
 at 196.0 in all 18 steady-state events while the onset temperature moves over
 97% of the annual swing; the v1.1 thermal-gate control does the exact opposite
 (1.87 °C, interval 131→405). Below ~300 days the colony cannot entrain — 195
-active days plus the required chilling do not fit in the year — and both seeds
-went extinct at 200. That failure mode is specific to having a clock; the
-control locks 1:1 at every year length.
+active days plus the required chilling do not fit in the year — and at 200 it
+fails to found at all. That failure mode is specific to having a clock; the
+control locks 1:1 at every year length. The cost is not a penalty of its own:
+where the colony entrains, the time-weighted active fraction sits on 195/year
+and population tracks it; where it does not, a missed spring costs a whole
+year's activity and population tracks *that*.
 
 Nest volume is **not** the ~3 cells/ant previously claimed here — run 1 gives ~3
 only in years 0–2, 5–6 at steady state, ratcheting to 86 after the population
@@ -148,11 +151,11 @@ peak as the nest fails to shrink with the colony.
   not the pair: extinction on day 6531.6, half the file post-extinction padding
   from the v1.8 bug. Rerun on v1.8a, the first build where both arms can share a
   seed.
-- **Circannual mismatch is unexplained.** v1.9.2 settled *whether* the clock is
-  endogenous; it did not explain the shape of the cost. Steady-state population
-  peaks near a 300-day year rather than at 365, the year the parameters were
-  chosen for, and falls away on both sides. Two seeds only, one build, and no
-  mechanism — go and look before repeating the number.
+- **The thermal-year sweep is not a lifetime result.** 1500 days is 5 cycles at
+  a 300-day year and 2.7 at 550, so the arms are not matched on seasons lived
+  and none is near equilibrium. The population ordering it produces is a duty
+  cycle (`GLASS_LEN` is a fixed 195 days, so a shorter year is more waking time
+  per calendar day), *not* an optimum at 300 days — do not repeat it as one.
 - Nest-size ratchet: population halved over 1530 days while cells retained 85%.
   `CELL_COMMIT` shrink-lag is the suspect and is understated.
 - `LARVA_WINTER_DRAIN` (0.004/day, v1.8) not yet swept. Before it, diapausing

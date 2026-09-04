@@ -115,8 +115,50 @@ temperature stops settling at all — 7.28 °C one cycle and 23.41 the next.
 The thermal-gate control has no such failure mode. It cannot: it has no period
 of its own to mismatch. It locks 1:1 at 200 days as readily as at 550.
 
-That is a cost of the mechanism, and it emerges from it rather than being
-scripted anywhere — which is what the project asks of a cost.
+### What the mismatch actually costs, and what it does not
+
+Six years × two seeds, 1500 sim-days, logged through the simulator's own
+28-column logger and read by `summarise-runs.py`; run logs in
+`logs/thermal-year-v192/`. Everything below is time-weighted (rule 2) — the
+first pass reported day-1500 populations, which is a snapshot and was not used.
+
+| year | active fraction | 195/year | mean pop | peak pop (2 seeds) |
+|---|---|---|---|---|
+| 200 | — | 0.975 | 1.0 | 4, 0 — **founding fails** |
+| 250 | **0.520** | 0.780 | 151 | 421, 471 |
+| 300 | 0.671 | 0.650 | 325 | 581, 802 |
+| 365 | 0.564 | 0.534 | 224 | 449, 452 |
+| 450 | 0.456 | 0.433 | 153 | 330, 456 |
+| 550 | 0.349 | 0.355 | 65 | 221, 98 |
+
+Read the first two columns together, because they are the whole result. Wherever
+the colony entrains, the realised active fraction sits on 195/year — she is
+awake for her 195 days and asleep for the rest, and that is all that is
+happening. Where entrainment fails it does not: a 250-day year should be the
+most active of the six at 0.780 and realises 0.520, because a missed spring
+costs a whole extra year of dormancy.
+
+Population then tracks the *realised* active fraction and nothing else. A
+250-day year performs like a 450-day one (151 against 153) despite a nominal
+duty cycle nearly twice as high, because that is what it actually gets. **The
+mismatch has no penalty of its own; the penalty is the active days it loses.**
+That is the shape a cost is supposed to have here.
+
+Two things this table is not.
+
+- **It is not an optimum at 300 days.** 300 wins because 195/300 is the largest
+  duty cycle among the years that entrain, not because anything is tuned to it.
+  `GLASS_LEN` is a fixed 195 sim-days, so a shorter year is simply more waking
+  time per calendar day. Nothing here says a 300-day year suits *L. niger*.
+- **It is not a lifetime result.** 1500 days is 2.7 cycles at 550 and 5 at 300,
+  so the arms are not matched on seasons lived, and no arm is near equilibrium —
+  peak population is still climbing in most of them.
+
+At 200 days the colony does not fail slowly, it fails to found: one seed reached
+four workers and was extinct by day 1230, the other never produced a live worker
+at all. `summarise-runs.py` reports that second file as unreadable rather than as
+a run, which is correct — there was no colony — and it is kept as the fixture
+for that path.
 
 ---
 
