@@ -116,6 +116,15 @@ parameters in source and swept, not defended.
 
 ## Housekeeping
 
+**The Field Manual is the long-form reference and it is not in this repo.** It
+lives as a published artifact — *Formica Field Manual*, currently v1.9.2 — and
+covers the governing constraint, architecture, all fifteen subsystems, method,
+measured results with their controls, free parameters and open items, at far
+more length than anything here. Read it before redesigning a subsystem, and
+update it in the same session you change one, or it silently goes stale: it sat
+at v1.8a through two world-geometry versions. Find it with `/artifacts`, or the
+gallery at claude.ai/code/artifacts.
+
 - Bump the header version string and add a `CHANGELOG.md` entry with every
   change. Record failed attempts — often the informative part.
 - Extend the TSV run logging whenever a new measurable appears. Don't ask first.

@@ -162,6 +162,22 @@ for that path.
 
 ---
 
+## Housekeeping — the Field Manual is now findable from the repo
+
+The long-form reference lives as a published artifact rather than in the repo,
+which meant nothing in the repo said it existed. It had gone stale by two world
+versions and one falsified claim before anyone looked: it still described the
+disc-with-a-rim world v1.9 deleted, and still carried the dormancy result as
+*not yet distinguishable from the thermal gate it was built to replace*.
+
+Brought to v1.9.2 — layered world and the two projections, the thermal-year
+sweep and what the mismatch costs, the harness, the four missing versions, and
+the open item closed. `CLAUDE.md` and `README.md` now point at it, with the
+instruction to update it in the same session a subsystem changes. No simulator
+code changed, so the build stays at v1.9.2.
+
+---
+
 ## Housekeeping — the page deploys itself
 
 `.github/workflows/pages.yml` publishes `formica.html` to GitHub Pages on every

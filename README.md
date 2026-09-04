@@ -43,6 +43,7 @@ none of it scripted, all of it measured against a matched control.
 |---|---|
 | `formica.html` | current build (v1.9.2) |
 | `CHANGELOG.md` | version history, research basis, measured results, and the failed attempts |
+| *Formica Field Manual* | long-form technical reference — published separately as an artifact, not in this repo |
 | `lasius_niger_knowledge_base.md` | biology reference the design draws on |
 | `harness.mjs` | loads any build headless under node or bun, for parallel matched arms |
 | `probe-v192-thermal-year.js` | worked example: the sweep that separated the dormancy clock from the thermometer |
