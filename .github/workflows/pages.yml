@@ -27,8 +27,8 @@ jobs:
       - uses: actions/configure-pages@v5
 
       # No build step by design: formica.html is standalone. The site is just
-      # that file served as index.html, with the legacy builds alongside it as
-      # named controls.
+      # that file served as index.html, with the frozen controls alongside it so
+      # they stay runnable. Each carries a banner marking it dead; see CONTROLS.md.
       - name: Assemble site
         run: |
           mkdir -p _site

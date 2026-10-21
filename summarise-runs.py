@@ -34,7 +34,7 @@ project has actually shipped, so a flag means "go and look", not "unusual":
     SHORT       colony died before it established
 
 All rates here are time-weighted, never snapshots (rule 2).
-Requires only the standard library.
+Requires only the standard library (Python 3.8+).
 """
 
 import sys, os, glob, json, re, statistics
@@ -92,6 +92,7 @@ def parse(path):
 
     run = seed = None
     reason = "?"
+    year, amp, peak = 365.0, 9.0, -25.0
     if head:
         m = re.search(r"formica run\s+(\d+)", head)
         if m: run = int(m.group(1))
@@ -99,8 +100,15 @@ def parse(path):
         if m: seed = int(m.group(1))
         m = re.search(r"ended:\s*(.*?)\s+at day", head)
         if m: reason = m.group(1).strip()
+        # v1.9.2 writes the thermal scenario into the header. Older logs do
+        # not have it and are the default annual year by construction.
+        m = re.search(r"year\s+(-?[\d.]+)", head)
+        if m: year = float(m.group(1))
+        m = re.search(r"season\s+(-?[\d.]+)/(-?[\d.]+)/(-?[\d.]+)", head)
+        if m: amp, peak = float(m.group(2)), float(m.group(3))
 
     return {"path": path, "run": run, "seed": seed, "reason": reason,
+            "year": year, "peak": peak, "amp": amp,
             "partial": reason == "in progress" or "-partial" in os.path.basename(path),
             "cols": cols, "I": {c: i for i, c in enumerate(cols)}, "rows": rows,
             "events": events, "error": None}
@@ -311,24 +319,29 @@ def report(runs, detail=False):
     P("")
 
     # ---- tier 1 -------------------------------------------------------
-    P("=" * 118)
+    P("=" * 123)
     P("PER RUN")
-    P("=" * 118)
-    hdr = (f"{'file':<26} {'run':>3} {'seed':>11} {'days':>7} {'peak':>5} "
+    P("=" * 123)
+    hdr = (f"{'file':<26} {'run':>3} {'seed':>11} {'yr':>4} {'days':>7} {'peak':>5} "
            f"{'@day':>7} {'extinct':>7} {'queen':>7} {'emrg':>6} {'surv':>5} "
            f"{'c/ant':>10} {'stall':>5} {'fat@cap':>7}  flags")
     P(hdr)
-    P("-" * 118)
+    P("-" * 123)
     for a in sorted(ok, key=lambda x: (x["run"] is None, x["run"], x["path"])):
         cpa = "-"
         if a["cpa_early"] and a["cpa_last"]:
             cpa = f"{a['cpa_early']:.1f}->{a['cpa_last']:.0f}"
+        # Spelled out rather than nested inside the f-string below: reusing the
+        # same quote character inside a replacement field is PEP 701, i.e.
+        # Python 3.12+, and this file is meant to run anywhere.
+        surv_s = f"{a['survival'] * 100:.0f}%" if a["survival"] else "-"
         P(f"{os.path.basename(a['path'])[:26]:<26} "
           f"{fmt(a['run'], 'd'):>3} {fmt(a['seed'], 'd'):>11} "
+          f"{a['year']:>4.0f} "
           f"{a['days']:>7.0f} {a['peak_pop']:>5d} {a['peak_day']:>7.0f} "
           f"{fmt(a['extinct'], '.0f'):>7} {fmt(a['queen_death'], '.0f'):>7} "
           f"{fmt(a['rows'][-1][a['I']['emerged']], '.0f'):>6} "
-          f"{(f'{a['survival'] * 100:.0f}%' if a['survival'] else '-'):>5} "
+          f"{surv_s:>5} "
           f"{cpa:>10} "
           f"{a['stall'] * 100:>4.0f}% {a['fat_at_cap'] * 100:>6.0f}%  "
           + ",".join(f"{k}x{n}" if n > 1 else k
@@ -339,9 +352,9 @@ def report(runs, detail=False):
 
     # ---- tier 2 -------------------------------------------------------
     flagged = [a for a in ok if a["flags"]]
-    P("=" * 118)
+    P("=" * 123)
     P(f"FLAGGED RUNS ({len(flagged)} of {len(ok)})")
-    P("=" * 118)
+    P("=" * 123)
     if not flagged:
         P("None. No run tripped a known failure mode.")
     for a in flagged:
@@ -358,9 +371,9 @@ def report(runs, detail=False):
 
     # ---- optional detail ----------------------------------------------
     if detail:
-        P("=" * 118)
+        P("=" * 123)
         P("CHECKPOINTS")
-        P("=" * 118)
+        P("=" * 123)
         for a in ok:
             I = a["I"]
             P("")
@@ -379,9 +392,9 @@ def report(runs, detail=False):
         P("")
 
     # ---- tier 3 -------------------------------------------------------
-    P("=" * 118)
+    P("=" * 123)
     P("ACROSS ALL RUNS")
-    P("=" * 118)
+    P("=" * 123)
     if ok:
         peaks = [a["peak_pop"] for a in ok]
         ends = [a["extinct"] for a in ok if a["extinct"]]
@@ -400,28 +413,81 @@ def report(runs, detail=False):
             P(f"queen death (day) n={len(qd)}  median {statistics.median(qd):.0f}"
               f"  range {min(qd):.0f}-{max(qd):.0f}")
 
-        # dormancy timing — the identifiability question needs the variance
+        # Dormancy timing — the identifiability question needs the variance,
+        # and it needs it grouped by thermal year. Under one noiseless annual
+        # curve "195 days after reactivation" and "the day the falling limb
+        # reaches T" name the same date forever, so a single-year pile cannot
+        # answer it however many runs are in it (v1.9.2). Rescale the year and
+        # the two come apart: the sand-glass keeps the INTERVAL and gives up
+        # the temperature, a thermal gate does the reverse.
+        #
         # Skip each run's first dormancy: the queen founds mid-year with a
-        # part-season, so her first onset is different by design. The
-        # identifiability question is about steady state.
-        temps = [t for a in ok for _, t in a["dormancies"][1:]]
-        doys = [d % 365 for a in ok for d, _ in a["dormancies"][1:]]
+        # part-season, so her first onset is different by design.
+        byyear = {}
+        for a in ok:
+            if not a["dormancies"]:
+                continue
+            g = byyear.setdefault(a["year"], {"t": [], "ph": [], "gap": [], "n": 0})
+            g["n"] += 1
+            Y = a["year"]
+            for d, t in a["dormancies"][1:]:
+                g["t"].append(t)
+                g["ph"].append(((d - a["peak"]) % Y) / Y)
+                # The sand-glass interval: onset minus the reactivation that
+                # started that season. Invariant iff the clock is endogenous.
+                prev = [r for r, _ in a["reactivations"] if r < d]
+                if prev:
+                    g["gap"].append(d - prev[-1])
         first = [(a.get("run"), a["dormancies"][0]) for a in ok if a["dormancies"]]
-        if temps:
+        if byyear:
+            def rng(v, f="{:.1f}"):
+                if not v:
+                    return "-"
+                lo, hi = min(v), max(v)
+                return (f + "-" + f + " ({:.2f})").format(lo, hi, hi - lo)
             P("")
-            P(f"dormancy onset    n={len(temps)} steady-state events over {len(ok)} run(s)"
-              f"  (founding year excluded)")
+            P("dormancy onset    steady-state events, founding year excluded")
             P("  founding yr     " + ", ".join(
                 f"run {r}: day {d:.0f} at {t:.1f}C" for r, (d, t) in first[:4]))
-            P(f"  trigger temp    {min(temps):.1f}-{max(temps):.1f} C  "
-              f"(spread {max(temps) - min(temps):.2f})")
-            P(f"  day-of-year     {min(doys):.1f}-{max(doys):.1f}  "
-              f"(spread {max(doys) - min(doys):.1f})")
-            if max(temps) - min(temps) < 0.15 and max(doys) - min(doys) < 1.0:
-                P("  NOTE: zero variance in both. Under a noiseless annual temperature")
-                P("        curve an endogenous clock and a thermal gate are")
-                P("        observationally identical - this is not evidence for the")
-                P("        sand-glass. Perturb the thermal year to separate them.")
+            P(f"  {'year':>6} {'runs':>4} {'n':>3}  {'onset temp (C)':>22}"
+              f"  {'phase of year':>22}  {'react->onset (d)':>22}")
+            for Y in sorted(byyear):
+                g = byyear[Y]
+                P(f"  {Y:>6.0f} {g['n']:>4} {len(g['t']):>3}  {rng(g['t']):>22}"
+                  f"  {rng(g['ph'], '{:.3f}'):>22}  {rng(g['gap']):>22}")
+
+            allt = [x for g in byyear.values() for x in g["t"]]
+            allg = [x for g in byyear.values() for x in g["gap"]]
+            if len(byyear) < 2:
+                if allt and max(allt) - min(allt) < 0.15:
+                    P("  NOTE: zero variance, but only one thermal year in this pile.")
+                    P("        Under a noiseless annual curve an endogenous clock and a")
+                    P("        thermal gate are observationally identical - this is not")
+                    P("        evidence for the sand-glass. Rescale CFG.SEASON.YEAR and")
+                    P("        rerun to separate them.")
+            elif allt and allg:
+                # Degrees and days do not compare, so score each candidate
+                # invariant against its own scale: the onset temperature
+                # against the full annual swing it could have moved over, the
+                # interval against its own mean. Whichever is the smaller
+                # fraction is the thing the queen is actually holding constant.
+                amp = max(a["amp"] for a in ok)
+                dT, dG = max(allt) - min(allt), max(allg) - min(allg)
+                relT, relG = dT / max(1e-9, 2 * amp), dG / max(1e-9, sum(allg) / len(allg))
+                P(f"  spreads         onset temp {dT:.1f} C = {relT * 100:.0f}% of the annual"
+                  f" swing;  react->onset {dG:.1f} d = {relG * 100:.0f}% of its mean")
+                if relG < 0.25 * relT:
+                    P(f"  VERDICT: across {len(byyear)} thermal years the interval holds and the"
+                      " temperature does not.")
+                    P("        The interval is the invariant: endogenous clock, not a"
+                      " thermal gate.")
+                elif relT < 0.25 * relG:
+                    P(f"  VERDICT: across {len(byyear)} thermal years the temperature holds and"
+                      " the interval does not.")
+                    P("        The temperature is the invariant: thermal gate, not a clock.")
+                else:
+                    P("  VERDICT: neither is clearly the invariant across years"
+                      " - go and look.")
         rt = [t for a in ok for _, t in a["reactivations"]]
         if rt:
             P(f"reactivation temp {min(rt):.1f}-{max(rt):.1f} C over {len(rt)} events")

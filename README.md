@@ -27,20 +27,30 @@ none of it scripted, all of it measured against a matched control.
   are likeliest to be picked up. Concentric annuli fall out of that balance:
   egg 34.8 < pupa 65.9 < larva 70.3, pooled over ~19,000 observations, against
   a control showing all three at ~5.5.
-- **The year** — dormancy is endogenous, not thermal. The queen stops in late
-  summer at ~18 °C because her internal period elapsed, ~60 days before it turns
-  cold. Chilling arms reactivation; spring warmth triggers it. Winter cannot be
-  skipped, only spent warm.
+- **The year** — dormancy is endogenous, not thermal, and that is separated from
+  the thermometer rather than asserted. Rescale the environmental year from 200
+  to 550 days and she still stops exactly 196 days after reactivation, at
+  whatever temperature that lands on — 11.7 °C under a 300-day year, 24.8 under
+  a 550-day one, spanning 97% of the annual swing. The v1.1 thermal-gate build,
+  run through the same sweep, does the opposite: it holds the temperature to
+  1.9 °C and lets the interval slide from 131 days to 405. Chilling arms
+  reactivation; spring warmth triggers it. Winter cannot be skipped, only spent
+  warm.
 
 ## Files
 
 | | |
 |---|---|
-| `formica.html` | current build (v1.7) |
+| `formica.html` | current build (v1.9.2) |
 | `CHANGELOG.md` | version history, research basis, measured results, and the failed attempts |
+| *Formica Field Manual* | long-form technical reference — published separately as an artifact, not in this repo |
 | `lasius_niger_knowledge_base.md` | biology reference the design draws on |
-| `formica-v1.1-legacy.html` | thermal-gate predecessor, kept as the control the endogenous-cycle build was measured against |
-| `formica-global-legacy.html` | original global-signal build, kept as the baseline |
+| `harness.mjs` | loads any build headless under node or bun, for parallel matched arms |
+| `probe-v192-thermal-year.js` | worked example: the sweep that separated the dormancy clock from the thermometer |
+| `summarise-runs.py` | triages a pile of run logs; flags encode failures this project has shipped |
+| `CONTROLS.md` | what is deliberately frozen, what each control proves, and why deleting it breaks a claim |
+| `formica-v1.1-legacy.html` | **frozen at v1.1**, never developed — the thermal-gate control the endogenous-dormancy result is measured against |
+| `formica-global-legacy.html` | **frozen at v0.1**, never developed — the pre-governing-rule baseline |
 
 ## Long runs
 

@@ -1,4 +1,5 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Formica v0.1 (frozen control) — global-signal build</title>
 <style>
 /* ============================================================
    FORMICA — Lasius niger colony simulator
@@ -62,8 +63,31 @@ footer{margin-top:12px;color:var(--dim);font-size:10px;line-height:1.65;
   border-top:1px solid var(--line);padding-top:9px}
 footer b{color:var(--bone);font-weight:600}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+/* ---------------------------------------------------------------- frozen mark
+   Presentation only: a title, this rule block and the banner div. Nothing in
+   the simulation source below has changed since this build was frozen, and the
+   commit that added the mark proves it by hash. Do not write the opening tag of
+   a script element anywhere in this file outside the real one - the headless
+   harness extracts source by matching it, and a second occurrence silently
+   feeds it the wrong text. */
+.frozen{
+  background:#3A1A10; color:#F0C9B4; border-bottom:2px solid #C4785C;
+  padding:10px 16px; font-size:12px; line-height:1.6; letter-spacing:.01em;
+}
+.frozen b.hd{color:#FFD9C4; letter-spacing:.09em; text-transform:uppercase;
+  font-size:11px; display:block; margin-bottom:2px}
+.frozen a{color:#E9A93C}
 </style>
 
+<div class="frozen">
+  <b class="hd">Frozen control &middot; not maintained, not developed</b>
+  This is <b>v0.1</b>, the build from before the governing rule, in which ants read
+  colony totals directly. It is kept as the baseline the local-rule build is measured
+  against, and it is never to be developed, fixed or tidied &mdash; a change here
+  silently invalidates every result that cites it.
+  The live simulator is <a href="index.html">index.html</a>; the policy is in
+  <b>CONTROLS.md</b>.
+</div>
 <div class="wrap">
 <header>
   <h1>Formica</h1>
